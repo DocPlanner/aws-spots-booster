@@ -26,9 +26,15 @@ type AutoscalingGroup struct {
 }
 
 // AutoscalingGroups represents a group of autoscaling groups
-type AutoscalingGroups []AutoscalingGroup
+type AutoscalingGroups = []AutoscalingGroup
 
 // Pools
+
+// AutoscalingGroupPool represents a group of autoscaling groups
+type AutoscalingGroupPool struct {
+	Lock              sync.Mutex
+	AutoscalingGroups AutoscalingGroups
+}
 
 // EventPool represents a list of events stored from Kubernetes to handle API server events' TTL
 type EventPool struct {

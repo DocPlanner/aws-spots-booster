@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	_ "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/homedir"
@@ -44,6 +42,10 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 	// Keep Kubernetes clean
 	go CleanKubernetesEvents(client, eventPool, nodePool, 24)
 
+	// Load Cluster Autoscaler status configmap on memory JIT
+	autoscalingGroupPool := &AutoscalingGroupPool{}
+	go WatchStatusConfigmap(client, flags, autoscalingGroupPool)
+
 	//
 	awsClient, err := AwsCreateSession()
 	if err != nil {
@@ -54,34 +56,17 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 	for {
 		log.Print("starting a synchronization loop")
 
-		// Get configmap from the cluster
-		configMap, err := client.CoreV1().ConfigMaps(*flags.CAStatusNamespace).Get(context.TODO(), *flags.CAConfigmapName, metav1.GetOptions{})
-		if err != nil {
-			log.Print(ConfigmapRetrieveErrorMessage)
-
-			time.Sleep(SynchronizationScheduleSeconds * time.Second)
-			continue
-		}
-
-		// Look for all the ASG names and health arguments
-		autoscalingGroupsNames := GetAutoscalingGroupsNames(configMap.Data["status"])
-		autoscalingGroupsHealthArgs := GetAutoscalingGroupsHealthArguments(configMap.Data["status"])
-
-		// Retrieve data as a Go struct
-		autoscalingGroups, err := GetAutoscalingGroupsObject(autoscalingGroupsNames, autoscalingGroupsHealthArgs)
-		if err != nil {
-			log.Print(ConfigMapParseErrorMessage)
-		}
-
 		//log.Print(eventPool.Items)
 		log.Printf("Events on the pool: %d", len(eventPool.Events.Items))
 		log.Printf("Nodes on the pool: %d", len(nodePool.Nodes.Items))
+
+		log.Printf("Show cm in memory: %v", autoscalingGroupPool.AutoscalingGroups)
 
 		// Get a map of node-group, each value is the count of its events
 		nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
 
 		// Calculate final capacity for the ASGs
-		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(*autoscalingGroups, nodeGroupEventsCount)
+		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(autoscalingGroupPool.AutoscalingGroups, nodeGroupEventsCount)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -94,10 +79,10 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 		err = SetDesiredCapacityASGs(awsClient, flags, asgsDesiredCapacities)
 
 		// Update Prometheus metrics from AutoscalingGroups type data
-		err = upgradePrometheusMetrics(autoscalingGroups)
-		if err != nil {
-			log.Print(MetricsUpdateErrorMessage)
-		}
+		//err = upgradePrometheusMetrics(autoscalingGroupPool.AutoscalingGroups)
+		//if err != nil {
+		//	log.Print(MetricsUpdateErrorMessage)
+		//}
 
 		time.Sleep(SynchronizationScheduleSeconds * time.Second)
 	}
