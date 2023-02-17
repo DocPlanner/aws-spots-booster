@@ -31,7 +31,7 @@ const (
 
 // SynchronizeStatus TODO
 // Prometheus ref: https://prometheus.io/docs/guides/go-application/
-func SynchronizeStatus(client *kubernetes.Clientset, namespace string, configmap string) {
+func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 
 	// Update the nodes pool
 	nodePool := &NodePool{}
@@ -44,8 +44,8 @@ func SynchronizeStatus(client *kubernetes.Clientset, namespace string, configmap
 	// Keep Kubernetes clean
 	go CleanKubernetesEvents(client, eventPool, nodePool, 24)
 
-	//awsClient, err := CreateAwsSession()
-	_, err := CreateAwsSession()
+	//
+	awsClient, err := AwsCreateSession()
 	if err != nil {
 		log.Print("error creating AWS client")
 	}
@@ -55,7 +55,7 @@ func SynchronizeStatus(client *kubernetes.Clientset, namespace string, configmap
 		log.Print("starting a synchronization loop")
 
 		// Get configmap from the cluster
-		configMap, err := client.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configmap, metav1.GetOptions{})
+		configMap, err := client.CoreV1().ConfigMaps(*flags.CAStatusNamespace).Get(context.TODO(), *flags.CAConfigmapName, metav1.GetOptions{})
 		if err != nil {
 			log.Print(ConfigmapRetrieveErrorMessage)
 
@@ -77,49 +77,21 @@ func SynchronizeStatus(client *kubernetes.Clientset, namespace string, configmap
 		log.Printf("Events on the pool: %d", len(eventPool.Events.Items))
 		log.Printf("Nodes on the pool: %d", len(nodePool.Nodes.Items))
 
-		// Get a map of node-group, each value is a list of its events
-		//nodeGroupsEvents := GetEventsByNodeGroup(eventPool, nodeList)
-		//log.Print("Showing NGs")
-		//log.Print(nodeGroupsEvents)
-
-		nodeGroupNames := GetNodeGroupNames(nodePool)
-		log.Print(nodeGroupNames)
-
 		// Get a map of node-group, each value is the count of its events
 		nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
-		//log.Print("Showing NG count")
-		//log.Print(nodeGroupEventsCount)
 
 		// Calculate final capacity for the ASGs
-		asgsDesiredCapacities, err := CalculateDesiredCapacityASG(*autoscalingGroups, nodeGroupEventsCount)
+		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(*autoscalingGroups, nodeGroupEventsCount)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		log.Print("Showing calculations")
-		log.Print(asgsDesiredCapacities)
+		log.Printf("Showing calculations: %v", asgsDesiredCapacities)
 
-		for asgName, desiredCapacity := range asgsDesiredCapacities {
+		//log.Print(LevenshteinDistance([]rune("nodes-app"), []rune("eks-nodes-app-a2c22d55-9602-35a9-b85f-b4bea0e4540f")))
+		//log.Print(LevenshteinDistance([]rune("nodes-app"), []rune("eks-nodes-app-spot-0ec22d5a-1d53-aa90-9a86-46470ecca2af")))
 
-			log.Printf("setting capacity for '%s' to '%d'", asgName, desiredCapacity)
-
-			// Send the request to AWS
-			//err = SetDesiredCapacity(
-			//	awsClient,
-			//	"eks-nodes-app-spot-0ec22d5a-1d53-aa90-9a86-46470ecca2af",
-			//	23)
-			//if err != nil {
-			//	log.Fatal(err)
-			//}
-		}
-
-		// No changes, just reschedule calculations
-		//if len(desiredCapacity) == 0 {
-		//    continue
-		//}
-
-		//log.Print("Desired capacity for the ASGs are: ")
-		//log.Print(desiredCapacity)
+		err = SetDesiredCapacityASGs(awsClient, flags, asgsDesiredCapacities)
 
 		// Update Prometheus metrics from AutoscalingGroups type data
 		err = upgradePrometheusMetrics(autoscalingGroups)
@@ -132,28 +104,32 @@ func SynchronizeStatus(client *kubernetes.Clientset, namespace string, configmap
 }
 
 func main() {
-	// Get the values from flags
-	connectionMode := flag.String("connection-mode", "kubectl", "(optional) What type of connection to use: incluster, kubectl")
-	kubeconfig := flag.String("kubeconfig", filepath.Join(homedir.HomeDir(), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	namespaceFlag := flag.String("namespace", "kube-system", "Kubernetes Namespace where to synchronize the certificates")
-	configmapFlag := flag.String("configmap", "cluster-autoscaler-status", "Name of the cluster-autoscaler's status configmap")
 
-	metricsPortFlag := flag.String("metrics-port", "2112", "Port where metrics web-server will run")
-	metricsHostFlag := flag.String("metrics-host", "0.0.0.0", "Host where metrics web-server will run")
+	flags := &ControllerFlags{}
+
+	// Get the values from flags
+	flags.ConnectionMode = flag.String("connection-mode", "kubectl", "(optional) What type of connection to use: incluster, kubectl")
+	flags.Kubeconfig = flag.String("kubeconfig", filepath.Join(homedir.HomeDir(), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+	flags.CAStatusNamespace = flag.String("ca-status-namespace", "kube-system", "Kubernetes Namespace where to read cluster-utoscaler's status configmap")
+	flags.CAConfigmapName = flag.String("ca-status-name", "cluster-autoscaler-status", "Name of the cluster-autoscaler's status configmap")
+	flags.IgnoredNodegroups = flag.String("ignored-nodegroups", "", "Comma-separated list of node-group names to ignore on ASGs boosting")
+
+	flags.MetricsPort = flag.String("metrics-port", "2112", "Port where metrics web-server will run")
+	flags.MetricsHost = flag.String("metrics-host", "0.0.0.0", "Host where metrics web-server will run")
 	flag.Parse()
 
 	// Generate the Kubernetes client to modify the resources
 	log.Printf(GenerateRestClientMessage)
-	client, err := GetKubernetesClient(*connectionMode, *kubeconfig)
+	client, err := GetKubernetesClient(*flags.ConnectionMode, *flags.Kubeconfig)
 	if err != nil {
 		log.Printf(GenerateRestClientErrorMessage, err)
 	}
 
 	// Parse Cluster Autoscaler's status configmap in the background
-	go SynchronizeStatus(client, *namespaceFlag, *configmapFlag)
+	go SynchronizeStatus(client, flags)
 
 	// Start a webserver for exposing metrics endpoint
-	metricsHost := *metricsHostFlag + ":" + *metricsPortFlag
+	metricsHost := *flags.MetricsHost + ":" + *flags.MetricsPort
 	http.Handle("/metrics", promhttp.Handler())
 	err = http.ListenAndServe(metricsHost, nil)
 	if err != nil {

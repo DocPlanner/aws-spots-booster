@@ -41,3 +41,28 @@ type NodePool struct {
 	Lock  sync.Mutex
 	Nodes v1.NodeList
 }
+
+// RelationalPool represents the relation between node-group names and ASG names
+// Done this way to force user review before performing real changes
+// TODO
+type RelationalPool struct {
+	Lock      sync.Mutex
+	Relations map[string]string
+	Approved  bool
+}
+
+// Controller stuff
+
+// ControllerFlags represents the group of flags needed by the controller
+type ControllerFlags struct {
+	ConnectionMode *string
+	Kubeconfig     *string
+
+	CAStatusNamespace *string
+	CAConfigmapName   *string
+
+	IgnoredNodegroups *string
+
+	MetricsPort *string
+	MetricsHost *string
+}

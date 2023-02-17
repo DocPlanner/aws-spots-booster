@@ -9,9 +9,10 @@ import (
 const (
 
 	// MetricsPrefix
-	MetricsPrefix = "cluster_autoscaler_status_"
+	MetricsPrefix = "aws_spots_booster_"
 )
 
+// TODO UPDATE METRICS FOR THIS CONTROLLER
 var (
 	mReady = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: MetricsPrefix + "ready_total",

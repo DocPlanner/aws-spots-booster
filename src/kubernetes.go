@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -31,24 +29,6 @@ func GetKubernetesClient(connectionMode string, kubeconfigPath string) (*kuberne
 	// Construct the client
 	client, err = kubernetes.NewForConfig(config)
 	return client, err
-}
-
-// GetNodeList return a list of node resources
-func GetNodeList(client *kubernetes.Clientset) (nodeList *v1.NodeList, err error) {
-
-	nodeList, err = client.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-
-	return nodeList, err
-}
-
-// GetKubernetesEventList return a list of event resources matching a reason
-func GetKubernetesEventList(client *kubernetes.Clientset, eventReason string) (eventList *v1.EventList, err error) {
-
-	eventList, err = client.CoreV1().Events("default").List(context.TODO(), metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("reason=%s", eventReason),
-	})
-
-	return eventList, err
 }
 
 // DeleteKubernetesEvent delete an event from the cluster

@@ -23,7 +23,7 @@ const (
 	AWSNodeGroupLabel = "eks.amazonaws.com/nodegroup"
 
 	//
-	EventsGCLoopTime = 2 * time.Second
+	CleanKubernetesEventsLoopTime = 2 * time.Second
 )
 
 // WatchNodes watches for nodes on k8s and keep a pool up-to-date with them
@@ -171,7 +171,7 @@ func CleanKubernetesEvents(client *kubernetes.Clientset, eventPool *EventPool, n
 			}
 		}
 
-		time.Sleep(EventsGCLoopTime)
+		time.Sleep(CleanKubernetesEventsLoopTime)
 	}
 }
 
