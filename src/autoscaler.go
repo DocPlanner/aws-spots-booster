@@ -34,8 +34,8 @@ func WatchStatusConfigmap(client *kubernetes.Clientset, flags *ControllerFlags, 
 		switch event.Type {
 		case watch.Added, watch.Modified:
 			log.Printf("configmap added: %s/%s", configmapObject.Namespace, configmapObject.Name) // TODO: Improve logging
-			autoscalingGroupsNames := GetAutoscalingGroupsNames(configmapObject.Data["status"])
-			autoscalingGroupsHealthArgs := GetAutoscalingGroupsHealthArguments(configmapObject.Data["status"])
+			autoscalingGroupsNames := ParseAutoscalingGroupsNames(configmapObject.Data["status"])
+			autoscalingGroupsHealthArgs := ParseAutoscalingGroupsHealthArguments(configmapObject.Data["status"])
 
 			autoscalingGroups, err := GetAutoscalingGroupsObject(autoscalingGroupsNames, autoscalingGroupsHealthArgs)
 			if err != nil {
@@ -52,8 +52,8 @@ func WatchStatusConfigmap(client *kubernetes.Clientset, flags *ControllerFlags, 
 	}
 }
 
-// GetAutoscalingGroupsNames return an array with the names of the node-groups in the same order they are in the status
-func GetAutoscalingGroupsNames(status string) []string {
+// ParseAutoscalingGroupsNames return an array with the names of the node-groups in the same order they are in the status
+func ParseAutoscalingGroupsNames(status string) []string {
 	var autoscalingGroupNames []string
 	nameRe := regexp.MustCompile(`(Name:\s*)([a-zA-Z0-9_-]+)`)
 	autoscalingGroupMatches := nameRe.FindAllStringSubmatch(status, -1)
@@ -65,8 +65,8 @@ func GetAutoscalingGroupsNames(status string) []string {
 	return autoscalingGroupNames
 }
 
-// GetAutoscalingGroupsHealthArguments return an array where each element is a string with all the arguments of one nodegroup
-func GetAutoscalingGroupsHealthArguments(status string) []string {
+// ParseAutoscalingGroupsHealthArguments return an array where each element is a string with all the arguments of one nodegroup
+func ParseAutoscalingGroupsHealthArguments(status string) []string {
 	// Look for the node group health arguments
 	nameRe := regexp.MustCompile(`(Health:\s*)([a-zA-Z0-9]+)\s*\((?P<args>(.*)+)\)`)
 	autoscalingGroupMatches := nameRe.FindAllStringSubmatch(status, -1)
@@ -119,4 +119,14 @@ func GetAutoscalingGroupsObject(autoscalingGroupsNames []string, autoscalingGrou
 	}
 
 	return &autoscalingGroups, nil
+}
+
+// GetAutoscalingGroupsNames return an array with the names of the ASGs from the ASG pool
+func GetAutoscalingGroupsNames(autoscalingGroupPool *AutoscalingGroupPool) (autoscalingGroupNames []string) {
+
+	for _, autoscalingGroup := range autoscalingGroupPool.AutoscalingGroups {
+		autoscalingGroupNames = append(autoscalingGroupNames, autoscalingGroup.Name)
+	}
+
+	return autoscalingGroupNames
 }

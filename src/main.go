@@ -51,6 +51,9 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 	if err != nil {
 		log.Print("error creating AWS client")
 	}
+	go WatchAutoScalingGroupsTags(awsClient, flags, autoscalingGroupPool)
+
+	// TODO: Put a wait group for all the watchers here before starting
 
 	// Start working with the events
 	for {
@@ -73,8 +76,7 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 
 		log.Printf("Showing calculations: %v", asgsDesiredCapacities)
 
-		//log.Print(LevenshteinDistance([]rune("nodes-app"), []rune("eks-nodes-app-a2c22d55-9602-35a9-b85f-b4bea0e4540f")))
-		//log.Print(LevenshteinDistance([]rune("nodes-app"), []rune("eks-nodes-app-spot-0ec22d5a-1d53-aa90-9a86-46470ecca2af")))
+		//AwsDescribeAutoScalingGroupsTags(awsClient, []string{"eks-nodes-app-a2c22d55-9602-35a9-b85f-b4bea0e4540f"})
 
 		err = SetDesiredCapacityASGs(awsClient, flags, asgsDesiredCapacities)
 

@@ -23,12 +23,13 @@ type HealthStatus struct {
 type AutoscalingGroup struct {
 	Name   string
 	Health HealthStatus
+	Tags   map[string]string
 }
 
 // AutoscalingGroups represents a group of autoscaling groups
 type AutoscalingGroups = []AutoscalingGroup
 
-// Pools
+// Pools TODO DESCRIPTION
 
 // AutoscalingGroupPool represents a group of autoscaling groups
 type AutoscalingGroupPool struct {
@@ -51,11 +52,11 @@ type NodePool struct {
 // RelationalPool represents the relation between node-group names and ASG names
 // Done this way to force user review before performing real changes
 // TODO
-type RelationalPool struct {
-	Lock      sync.Mutex
-	Relations map[string]string
-	Approved  bool
-}
+//type RelationalPool struct {
+//    Lock      sync.Mutex
+//    Relations map[string]string
+//    Approved  bool
+//}
 
 // Controller stuff
 
