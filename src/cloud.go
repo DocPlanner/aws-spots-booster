@@ -144,7 +144,7 @@ func AwsSetDesiredCapacity(awsClient *session.Session, asgName string, desiredCa
 		HonorCooldown:        aws.Bool(false),
 	}
 
-	result, err := svc.SetDesiredCapacity(input)
+	_, err := svc.SetDesiredCapacity(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
@@ -163,22 +163,19 @@ func AwsSetDesiredCapacity(awsClient *session.Session, asgName string, desiredCa
 		return err
 	}
 
-	fmt.Println(result)
 	return err
 }
 
 // CalculateDesiredCapacityASGs return a list of ASGs, the values for them are the number of instances needed
 // This function will only return those ASGs that actually need changes according to the events
-func CalculateDesiredCapacityASGs(autoscalingGroups AutoscalingGroups, nodeGroupEventsCount map[string]int) (asgsDesiredCapacity map[string]int, err error) {
+func CalculateDesiredCapacityASGs(autoscalingGroupPool *AutoscalingGroupPool, nodeGroupEventsCount map[string]int) (asgsDesiredCapacity map[string]int, err error) {
 
 	asgsDesiredCapacity = map[string]int{}
 
-	for _, asg := range autoscalingGroups {
+	for _, asg := range autoscalingGroupPool.AutoscalingGroups {
 
 		nodeGroupName := asg.Tags[AWSAutoscalingGroupsNodeGroupTag]
-
 		if nodeGroupEventsCount[nodeGroupName] > 0 {
-
 			currentCount, err := strconv.Atoi(asg.Health.Ready)
 			if err != nil {
 				break
@@ -190,38 +187,52 @@ func CalculateDesiredCapacityASGs(autoscalingGroups AutoscalingGroups, nodeGroup
 	return asgsDesiredCapacity, err
 }
 
-// SetDesiredCapacityASGs TODO
+// SetDesiredCapacityASGs change DesiredCapacity field for a batch of ASGs in the cloud provider
 // Arguments related to capacity are not pointers but explicit copies to avoid external modifications during changes
-func SetDesiredCapacityASGs(awsClient *session.Session, flags *ControllerFlags, asgsDesiredCapacities map[string]int) (err error) {
-
-	// TODO Should we ignore by ASG instead??
+func SetDesiredCapacityASGs(awsClient *session.Session, flags *ControllerFlags, autoscalingGroupPool *AutoscalingGroupPool, asgsDesiredCapacity map[string]int) (err error) {
 
 	// Get ignored node-groups from flags
-	ignoredNodegroups := strings.Split(*flags.IgnoredNodegroups, ",")
-	ignoredNodegroups = slices.Filter(nil, ignoredNodegroups, func(s string) bool { return s != "" })
+	ignoredAsgs := strings.Split(*flags.IgnoredAutoscalingGroups, ",")
+	ignoredAsgs = slices.Filter(nil, ignoredAsgs, func(s string) bool { return s != "" })
+
+	asgsMaxCapacity, err := GetAutoscalingGroupsMaxCapacity(autoscalingGroupPool)
+	if err != nil {
+		log.Printf("impossible to get max capacity for some asg: %v", err) // TODO ERROR
+		return
+	}
 
 outterLoop:
-	for asgName, desiredCapacity := range asgsDesiredCapacities {
+	for asgName, asgDesiredCapacity := range asgsDesiredCapacity {
 
-		// Skip ASG when related nodegroup must be ignored
-		// TODO: Filter with more advanced technics
-		for _, ignoredNodeGroup := range ignoredNodegroups {
-			if strings.Contains(asgName, ignoredNodeGroup) {
-				log.Printf("skipping asg changes: %s ignored ng '%v'", asgName, ignoredNodeGroup)
+		// Skip ASG when must be ignored by flags configuration
+		for _, ignoredASG := range ignoredAsgs {
+			if asgName == ignoredASG {
+				log.Printf("skipping changes for ignored asg: %s", asgName) // TODO INFO
 				continue outterLoop
 			}
 		}
 
-		log.Printf("setting desired capacity for '%s' to '%d'", asgName, desiredCapacity)
+		asgDesiredCapacity = asgDesiredCapacity + *flags.ExtraNodesOverCalculations
+		log.Printf("setting desired capacity for '%s' to '%d'", asgName, asgDesiredCapacity) // TODO INFO
+
+		// Check whether desired capacity is into the max capacity
+		if asgDesiredCapacity > asgsMaxCapacity[asgName] {
+			asgDesiredCapacity = asgsMaxCapacity[asgName]
+			log.Printf("setting desired capacity for '%s' to the asg max '%d'", asgName, asgsMaxCapacity[asgName]) // TODO INFO
+		}
+
+		if *flags.DryRun {
+			continue
+		}
 
 		// Send the request to AWS
-		//err = SetDesiredCapacity(
-		//	awsClient,
-		//	"eks-nodes-app-spot-0ec22d5a-1d53-aa90-9a86-46470ecca2af",
-		//	23)
-		//if err != nil {
-		//	log.Fatal(err)
-		//}
+		err = AwsSetDesiredCapacity(
+			awsClient,
+			asgName,
+			int64(asgDesiredCapacity))
+		if err != nil {
+			log.Printf("impossible to reflect changes on aws asg '%s': %v", asgName, err) // TODO ERROR
+		}
 	}
 
 	return err

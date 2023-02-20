@@ -15,8 +15,8 @@ type HealthStatus struct {
 	LongUnregistered string `json:"longUnregistered"`
 
 	CloudProviderTarget  string `json:"cloudProviderTarget"` // Desired number of nodes in the provider
-	CloudProviderMinSize string `json:"maxSize"`             // Minimum number of nodes in the provider
-	CloudProviderMaxSize string `json:"minSize"`             // Maximum number of nodes in the provider
+	CloudProviderMinSize string `json:"minSize"`             // Minimum number of nodes in the provider
+	CloudProviderMaxSize string `json:"maxSize"`             // Maximum number of nodes in the provider
 }
 
 // AutoscalingGroup represents available metrics for one autoscaling group
@@ -59,7 +59,9 @@ type ControllerFlags struct {
 	CAStatusNamespace *string
 	CAConfigmapName   *string
 
-	IgnoredNodegroups *string
+	IgnoredAutoscalingGroups   *string
+	ExtraNodesOverCalculations *int
+	DryRun                     *bool
 
 	MetricsPort *string
 	MetricsHost *string

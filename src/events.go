@@ -156,8 +156,8 @@ func CleanKubernetesEvents(client *kubernetes.Clientset, eventPool *EventPool, n
 
 			difference := parsedDate.Sub(time.Now())
 
-			log.Printf("difference %d", difference)
-			log.Printf("node found %v", nodeFound)
+			//log.Printf("difference %d", difference)
+			//log.Printf("node found %v", nodeFound)
 
 			// 3. Actual cleaning according to the previous conditions
 			if math.Abs(difference.Hours()) > float64(hours) || !nodeFound {

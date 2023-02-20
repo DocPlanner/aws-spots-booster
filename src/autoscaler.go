@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -136,8 +137,6 @@ func GetAutoscalingGroupsObject(autoscalingGroupsNames []string, autoscalingGrou
 
 		// Append NG to the NG pool
 		autoscalingGroups = append(autoscalingGroups, &autoscalingGroup)
-
-		log.Printf("ALGOALGUITO: %v", name)
 	}
 
 	return &autoscalingGroups, nil
@@ -151,4 +150,20 @@ func GetAutoscalingGroupsNames(autoscalingGroupPool *AutoscalingGroupPool) (auto
 	}
 
 	return autoscalingGroupNames
+}
+
+// GetAutoscalingGroupsMaxCapacity return a map with the names of the ASGs from the ASG pool and their max capacity
+func GetAutoscalingGroupsMaxCapacity(autoscalingGroupPool *AutoscalingGroupPool) (autoscalingGroupsMaxCapacity map[string]int, err error) {
+
+	autoscalingGroupsMaxCapacity = map[string]int{}
+
+	for _, autoscalingGroup := range autoscalingGroupPool.AutoscalingGroups {
+		currentCloudProviderMaxSize, err := strconv.Atoi(autoscalingGroup.Health.CloudProviderMaxSize)
+		if err != nil {
+			break
+		}
+		autoscalingGroupsMaxCapacity[autoscalingGroup.Name] = currentCloudProviderMaxSize
+	}
+
+	return autoscalingGroupsMaxCapacity, err
 }

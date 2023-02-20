@@ -30,6 +30,7 @@ const (
 
 // SynchronizeStatus TODO
 // Prometheus ref: https://prometheus.io/docs/guides/go-application/
+// This function is expected to be run as a goroutine
 func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 
 	var waitGroup sync.WaitGroup
@@ -71,27 +72,24 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 		log.Print("starting a synchronization loop")
 
 		//log.Print(eventPool.Items)
-		log.Printf("Events on the pool: %d", len(eventPool.Events.Items))
-		log.Printf("Nodes on the pool: %d", len(nodePool.Nodes.Items))
-
-		//log.Printf("Show cm in memory: %v", autoscalingGroupPool.AutoscalingGroups)
-		for _, asg := range autoscalingGroupPool.AutoscalingGroups {
-			log.Printf("Show asg in memory: %v, %v, %v", asg.Name, asg.Tags, asg.Health)
-		}
+		log.Printf("events on the pool: %d", len(eventPool.Events.Items))
+		log.Printf("nodes on the pool: %d", len(nodePool.Nodes.Items))
 
 		// Get a map of node-group, each value is the count of its events
 		nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
-		log.Printf("count by nodegroup %v", nodeGroupEventsCount)
+		log.Printf("events by nodegroup %v", nodeGroupEventsCount)
 
 		// Calculate final capacity for the ASGs
-		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(autoscalingGroupPool.AutoscalingGroups, nodeGroupEventsCount)
+		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(autoscalingGroupPool, nodeGroupEventsCount)
 		if err != nil {
 			log.Fatal(err)
 		}
-
 		log.Printf("show calculations for autocaling groups: %v", asgsDesiredCapacities)
 
-		err = SetDesiredCapacityASGs(awsClient, flags, asgsDesiredCapacities)
+		err = SetDesiredCapacityASGs(awsClient, flags, autoscalingGroupPool, asgsDesiredCapacities)
+		if err != nil {
+			log.Fatal(err)
+		}
 
 		// Update Prometheus metrics from AutoscalingGroups type data
 		//err = upgradePrometheusMetrics(autoscalingGroupPool.AutoscalingGroups)
@@ -112,7 +110,9 @@ func main() {
 	flags.Kubeconfig = flag.String("kubeconfig", filepath.Join(homedir.HomeDir(), ".kube", "config"), "(optional) absolute path to the kubeconfig file")
 	flags.CAStatusNamespace = flag.String("ca-status-namespace", "kube-system", "Kubernetes Namespace where to read cluster-utoscaler's status configmap")
 	flags.CAConfigmapName = flag.String("ca-status-name", "cluster-autoscaler-status", "Name of the cluster-autoscaler's status configmap")
-	flags.IgnoredNodegroups = flag.String("ignored-nodegroups", "", "Comma-separated list of node-group names to ignore on ASGs boosting")
+	flags.IgnoredAutoscalingGroups = flag.String("ignored-autoscaling-groups", "", "Comma-separated list of autoscaling-group names to ignore on ASGs boosting")
+	flags.ExtraNodesOverCalculations = flag.Int("extra-nodes-over-calculation", 0, "Extra nodes to add over calculated ones")
+	flags.DryRun = flag.Bool("dry-run", false, "Skip actual changes on the cloud provider")
 
 	flags.MetricsPort = flag.String("metrics-port", "2112", "Port where metrics web-server will run")
 	flags.MetricsHost = flag.String("metrics-host", "0.0.0.0", "Host where metrics web-server will run")
