@@ -44,13 +44,21 @@ TODO
 There are several flags that can be configured to change the behaviour of the
 application. They are described in the following table:
 
-| Name                | Description                                                       |           Default           | Example                         |
-|:--------------------|:------------------------------------------------------------------|:---------------------------:|:--------------------------------|
-| `--connection-mode` | Connect from inside or outside Kubernetes                         |          `kubectl`          | `--connection-mode incluster`   |
-| `--kubeconfig`      | Path to the kubeconfig file                                       |      `~/.kube/config`       | `--kubeconfig "~/.kube/config"` |
-| `--namespace`       | Namespace where to look for Cluster Autoscaler's status configmap |        `kube-system`        | `--namespace "default"`         |
-| `--configmap`       | Name of Cluster Autoscaler's status configmap                     | `cluster-autoscaler-status` | `--configmap "another-cm"`      |
-| `--help`            | Show this help message                                            |              -              | -                               |
+| Name                             | Description                                                                |           Default           | Example                                          |
+|:---------------------------------|:---------------------------------------------------------------------------|:---------------------------:|:-------------------------------------------------|
+| `--connection-mode`              | Connect from inside or outside Kubernetes                                  |          `kubectl`          | `--connection-mode incluster`                    |
+| `--kubeconfig`                   | Path to the kubeconfig file                                                |      `~/.kube/config`       | `--kubeconfig "~/.kube/config"`                  |
+| `--dry-run`                      | Skip actual changes                                                        |           `false`           | `--dry-run true`                                 |
+| `--ca-status-namespace`          | Namespace where to look for Cluster Autoscaler's status configmap          |        `kube-system`        | `--ca-status-namespace "default"`                |
+| `--ca-status-name`               | Name of Cluster Autoscaler's status configmap                              | `cluster-autoscaler-status` | `--ca-status-name "another-cm"`                  |
+| `--ignored-autoscaling-groups`   | Comma-separated list of autoscaling-group names to ignore on ASGs boosting |              -              | `--ignored-autoscaling-groups "eks-one,eks-two"` |
+| `--extra-nodes-over-calculation` | Extra nodes to add to ASGs over calculated ones                            |             `0`             | `--extra-nodes-over-calculation 3`               |
+| `--time-between-drains`          | Duration between scheduling a drainages batch and the following            |            `60s`            | `--time-between-drains "1m"`                     |
+| `--drain-timeout`                | Duration to consider a drain as done when not finished                     |           `120s`            | `--drain-timeout 2m`                             |
+| `--concurrent-drains`            | Nodes to drain at once                                                     |             `5`             | `--concurrent-drains 7`                          |
+| `--metrics-port`                 | Port where metrics web-server will run                                     |           `2112`            | `--metrics-port 8080`                            |
+| `--metrics-host`                 | Host where metrics web-server will run                                     |          `0.0.0.0`          | `--metrics-host 0.1.0.2`                         |
+| `--help`                         | Show this help message                                                     |              -              | -                                                |
 
 ## FAQ
 
