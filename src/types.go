@@ -3,6 +3,7 @@ package main
 import (
 	v1 "k8s.io/api/core/v1"
 	"sync"
+	"time"
 )
 
 // HealthStatus represents the status of a node group
@@ -55,14 +56,22 @@ type NodePool struct {
 type ControllerFlags struct {
 	ConnectionMode *string
 	Kubeconfig     *string
+	DryRun         *bool
 
+	// C.Autoscaler status process
 	CAStatusNamespace *string
 	CAConfigmapName   *string
 
+	// Cloud process
 	IgnoredAutoscalingGroups   *string
 	ExtraNodesOverCalculations *int
-	DryRun                     *bool
 
+	// Drain process
+	TimeBetweenDrains *time.Duration
+	DrainTimeout      *time.Duration
+	ConcurrentDrains  *int
+
+	// Metrics
 	MetricsPort *string
 	MetricsHost *string
 }
