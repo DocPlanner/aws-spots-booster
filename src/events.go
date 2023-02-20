@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -156,16 +157,13 @@ func CleanKubernetesEvents(client *kubernetes.Clientset, eventPool *EventPool, n
 
 			difference := parsedDate.Sub(time.Now())
 
-			//log.Printf("difference %d", difference)
-			//log.Printf("node found %v", nodeFound)
-
 			// 3. Actual cleaning according to the previous conditions
 			if math.Abs(difference.Hours()) > float64(hours) || !nodeFound {
 				log.Printf("An event is too old (%s), deleting: %s/%s",
 					math.Abs(difference.Hours()), event.Namespace, event.Name)
 
 				err = DeleteKubernetesEvent(client, event.Namespace, event.Name)
-				if err != nil {
+				if err != nil && !errors.IsNotFound(err) {
 					log.Print("impossible to delete event from K8s")
 				}
 			}
@@ -242,4 +240,10 @@ func GetEventCountByNodeGroup(eventPool *EventPool, nodePool *NodePool) (nodeGro
 	}
 
 	return nodeGroupEventsCount
+}
+
+// GetEventsByCordonTimestamp TODO
+func GetEventsByCordonTimestamp(eventPool *EventPool) (orderedEvents []*v1.Event) {
+
+	return
 }

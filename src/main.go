@@ -62,6 +62,9 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 	//waitGroup.Add(1)
 	go WatchAutoScalingGroupsTags(awsClient, flags, autoscalingGroupPool)
 
+	// Drain risky nodes on background
+	go DrainNodesOnRisk(client, eventPool, nodePool)
+
 	// TODO: Put a wait group for all the watchers here before starting
 
 	// Wait until all the watchers are warmed enough
