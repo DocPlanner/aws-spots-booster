@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -31,19 +32,25 @@ const (
 // Prometheus ref: https://prometheus.io/docs/guides/go-application/
 func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 
+	var waitGroup sync.WaitGroup
+
 	// Update the nodes pool
 	nodePool := &NodePool{}
+	//waitGroup.Add(1)
 	go WatchNodes(client, nodePool)
 
 	// Update the events pool
 	eventPool := &EventPool{}
+	//waitGroup.Add(1)
 	go WatchEvents(client, RebalanceEvent, eventPool)
 
 	// Keep Kubernetes clean
+	//waitGroup.Add(1)
 	go CleanKubernetesEvents(client, eventPool, nodePool, 24)
 
 	// Load Cluster Autoscaler status configmap on memory JIT
 	autoscalingGroupPool := &AutoscalingGroupPool{}
+	//waitGroup.Add(1)
 	go WatchStatusConfigmap(client, flags, autoscalingGroupPool)
 
 	//
@@ -51,9 +58,13 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 	if err != nil {
 		log.Print("error creating AWS client")
 	}
+	//waitGroup.Add(1)
 	go WatchAutoScalingGroupsTags(awsClient, flags, autoscalingGroupPool)
 
 	// TODO: Put a wait group for all the watchers here before starting
+
+	// Wait until all the watchers are warmed enough
+	waitGroup.Wait()
 
 	// Start working with the events
 	for {
@@ -63,10 +74,14 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 		log.Printf("Events on the pool: %d", len(eventPool.Events.Items))
 		log.Printf("Nodes on the pool: %d", len(nodePool.Nodes.Items))
 
-		log.Printf("Show cm in memory: %v", autoscalingGroupPool.AutoscalingGroups)
+		//log.Printf("Show cm in memory: %v", autoscalingGroupPool.AutoscalingGroups)
+		for _, asg := range autoscalingGroupPool.AutoscalingGroups {
+			log.Printf("Show asg in memory: %v, %v, %v", asg.Name, asg.Tags, asg.Health)
+		}
 
 		// Get a map of node-group, each value is the count of its events
 		nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
+		log.Printf("count by nodegroup %v", nodeGroupEventsCount)
 
 		// Calculate final capacity for the ASGs
 		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(autoscalingGroupPool.AutoscalingGroups, nodeGroupEventsCount)
@@ -74,9 +89,7 @@ func SynchronizeStatus(client *kubernetes.Clientset, flags *ControllerFlags) {
 			log.Fatal(err)
 		}
 
-		log.Printf("Showing calculations: %v", asgsDesiredCapacities)
-
-		//AwsDescribeAutoScalingGroupsTags(awsClient, []string{"eks-nodes-app-a2c22d55-9602-35a9-b85f-b4bea0e4540f"})
+		log.Printf("show calculations for autocaling groups: %v", asgsDesiredCapacities)
 
 		err = SetDesiredCapacityASGs(awsClient, flags, asgsDesiredCapacities)
 

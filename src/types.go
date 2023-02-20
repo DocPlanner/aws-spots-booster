@@ -27,9 +27,9 @@ type AutoscalingGroup struct {
 }
 
 // AutoscalingGroups represents a group of autoscaling groups
-type AutoscalingGroups = []AutoscalingGroup
+type AutoscalingGroups = []*AutoscalingGroup
 
-// Pools TODO DESCRIPTION
+// Pools represent lockable group of different types, that are accessed/modified by goroutines
 
 // AutoscalingGroupPool represents a group of autoscaling groups
 type AutoscalingGroupPool struct {
@@ -48,15 +48,6 @@ type NodePool struct {
 	Lock  sync.Mutex
 	Nodes v1.NodeList
 }
-
-// RelationalPool represents the relation between node-group names and ASG names
-// Done this way to force user review before performing real changes
-// TODO
-//type RelationalPool struct {
-//    Lock      sync.Mutex
-//    Relations map[string]string
-//    Approved  bool
-//}
 
 // Controller stuff
 

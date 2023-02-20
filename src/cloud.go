@@ -15,38 +15,64 @@ import (
 )
 
 const (
-	ASGWatcherTriesBeforeFailing  = 2
-	ASGWatcherSecondsBetweenTries = 5
+	// Constants related to the cloud provider
+	AWSAutoscalingGroupsNodeGroupTag = "eks:nodegroup-name"
+
+	// Constants related to processes
+	ASGWatcherTriesBeforeFailing             = 2
+	ASGWatcherSecondsBetweenTries            = 5
+	ASGWatcherSecondsBetweenSynchronizations = 5
 )
 
-// TODO: Trust cloud or on flags
+// WatchAutoScalingGroupsTags TODO
 func WatchAutoScalingGroupsTags(awsClient *session.Session, flags *ControllerFlags, autoscalingGroupPool *AutoscalingGroupPool) {
 
 	var autoscalingGroupNames []string
 
-	// Try to get ASG names from memory several times
-	for try := 0; try <= ASGWatcherTriesBeforeFailing; try++ {
-		autoscalingGroupNames = GetAutoscalingGroupsNames(autoscalingGroupPool)
+	for {
+		// Try to get ASG names from memory several times
+		for try := 0; try <= ASGWatcherTriesBeforeFailing; try++ {
+			autoscalingGroupNames = GetAutoscalingGroupsNames(autoscalingGroupPool)
 
-		if len(autoscalingGroupNames) > 0 {
-			break
+			if len(autoscalingGroupNames) > 0 {
+				break
+			}
+
+			if try == ASGWatcherTriesBeforeFailing {
+				log.Fatal("impossible to get ASGs tags from cloud. ASGs names are not loaded in memory")
+			}
+			log.Print("autoscaling groups are not parsed yet")
+			time.Sleep(ASGWatcherSecondsBetweenTries * time.Second)
 		}
 
-		if try == ASGWatcherTriesBeforeFailing {
-			log.Fatal("impossible to get ASGs tags from cloud. ASGs names are not loaded in memory")
+		// Get ASGs tags from AWS
+		tagsOutput, err := AwsDescribeAutoScalingGroupsTags(awsClient, autoscalingGroupNames)
+		if err != nil {
+			log.Print("say something") // TODO Improve logging
 		}
-		log.Print("autoscaling groups are not parsed yet")
-		time.Sleep(ASGWatcherSecondsBetweenTries * time.Second)
+
+		// Group tags by ASG name
+		asgGroupedTags := map[string]map[string]string{}
+		for _, tag := range tagsOutput.Tags {
+
+			_, asgKeyFound := asgGroupedTags[*tag.ResourceId]
+			if !asgKeyFound {
+				asgGroupedTags[*tag.ResourceId] = map[string]string{}
+			}
+
+			asgGroupedTags[*tag.ResourceId][*tag.Key] = *tag.Value
+		}
+
+		// Store the tags into the actual ASGs object
+		// Doing this way to block the pool the minimum time possible
+		for _, asg := range autoscalingGroupPool.AutoscalingGroups {
+			autoscalingGroupPool.Lock.Lock()
+			asg.Tags = asgGroupedTags[asg.Name]
+			autoscalingGroupPool.Lock.Unlock()
+		}
+
+		time.Sleep(ASGWatcherSecondsBetweenSynchronizations * time.Second)
 	}
-
-	// Get ASGs tags from AWS. TODO don't forget about managing the errors here
-	tagsOutput, _ := AwsDescribeAutoScalingGroupsTags(awsClient, autoscalingGroupNames)
-
-	// Parse tags, include them into Autoscaling groups TODO: remember to lock the pool
-	log.Print(tagsOutput.Tags[0].Key)
-	log.Print(tagsOutput.Tags[0].Value)
-
-	// rellenar las tags uno por uno en memoria
 }
 
 // AwsCreateSession TODO
@@ -142,26 +168,22 @@ func AwsSetDesiredCapacity(awsClient *session.Session, asgName string, desiredCa
 }
 
 // CalculateDesiredCapacityASGs return a list of ASGs, the values for them are the number of instances needed
+// This function will only return those ASGs that actually need changes according to the events
 func CalculateDesiredCapacityASGs(autoscalingGroups AutoscalingGroups, nodeGroupEventsCount map[string]int) (asgsDesiredCapacity map[string]int, err error) {
 
 	asgsDesiredCapacity = map[string]int{}
 
-	// Iterate over affected node-groups
-	for nodeGroupName, eventCount := range nodeGroupEventsCount {
+	for _, asg := range autoscalingGroups {
 
-		// Iterate over ASGS to look for the name matching the node-group
-		// TODO use Levenshtein distance to find the node-group
-		for _, asg := range autoscalingGroups {
-			if !strings.Contains(asg.Name, nodeGroupName) {
-				continue
-			}
+		nodeGroupName := asg.Tags[AWSAutoscalingGroupsNodeGroupTag]
 
-			// Nodegroup name found on ASG, start the calculation
+		if nodeGroupEventsCount[nodeGroupName] > 0 {
+
 			currentCount, err := strconv.Atoi(asg.Health.Ready)
 			if err != nil {
 				break
 			}
-			asgsDesiredCapacity[asg.Name] = currentCount + eventCount
+			asgsDesiredCapacity[asg.Name] = currentCount + nodeGroupEventsCount[nodeGroupName]
 		}
 	}
 

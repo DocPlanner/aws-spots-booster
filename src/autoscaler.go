@@ -42,9 +42,26 @@ func WatchStatusConfigmap(client *kubernetes.Clientset, flags *ControllerFlags, 
 				log.Print(ConfigMapParseErrorMessage)
 			}
 
-			autoscalingGroupPool.Lock.Lock()
-			autoscalingGroupPool.AutoscalingGroups = *autoscalingGroups
-			autoscalingGroupPool.Lock.Unlock()
+			// Create all the ASGs when not already present
+			if len(autoscalingGroupPool.AutoscalingGroups) == 0 {
+				autoscalingGroupPool.Lock.Lock()
+				autoscalingGroupPool.AutoscalingGroups = *autoscalingGroups
+				autoscalingGroupPool.Lock.Unlock()
+				continue
+			}
+
+			// Update health values into the ASG objects
+			// Iterate this way not to overwrite changes done by another goroutines
+			for _, objectASG := range autoscalingGroupPool.AutoscalingGroups {
+
+				for _, calculatedASG := range *autoscalingGroups {
+					if calculatedASG.Name == objectASG.Name {
+						autoscalingGroupPool.Lock.Lock()
+						objectASG.Health = calculatedASG.Health
+						autoscalingGroupPool.Lock.Unlock()
+					}
+				}
+			}
 
 		case watch.Deleted:
 			log.Fatal("configmap deleted, stopping the program ") // TODO: Improve logging
@@ -92,13 +109,16 @@ func ParseAutoscalingGroupsHealthArguments(status string) []string {
 
 // GetAutoscalingGroupsObject return a AutoscalingGroups type with all the data from status ConfigMap already parsed
 func GetAutoscalingGroupsObject(autoscalingGroupsNames []string, autoscalingGroupsHealthStatus []string) (*AutoscalingGroups, error) {
-	var autoscalingGroup AutoscalingGroup
+
 	var autoscalingGroups AutoscalingGroups
 
 	stringRe := regexp.MustCompile(`(\w+)=([0-9]+)`)
 	replacePattern := `"$1":"$2",`
 
 	for i, name := range autoscalingGroupsNames {
+		// Craft a new object to get another memory address
+		var autoscalingGroup AutoscalingGroup
+
 		// Include NG name
 		autoscalingGroup.Name = name
 
@@ -115,7 +135,9 @@ func GetAutoscalingGroupsObject(autoscalingGroupsNames []string, autoscalingGrou
 		}
 
 		// Append NG to the NG pool
-		autoscalingGroups = append(autoscalingGroups, autoscalingGroup)
+		autoscalingGroups = append(autoscalingGroups, &autoscalingGroup)
+
+		log.Printf("ALGOALGUITO: %v", name)
 	}
 
 	return &autoscalingGroups, nil
