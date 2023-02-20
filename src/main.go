@@ -56,9 +56,14 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 	// Drain marked nodes on background.
 	// This goroutine is interrupted/resumed by a flag to be able
 	// to prevent scenarios where capacity and drainage happens at once
-	drainAllowedFlag := make(chan bool)
-	drainAllowedFlag <- false
-	go DrainNodesOnRisk(client, flags, eventPool, drainAllowedFlag)
+	var drainAllowedFlag bool = false
+	go DrainNodesOnRisk(client, flags, eventPool, &drainAllowedFlag)
+
+	// Testing flag
+	//go func(drainAllowedFlag *bool) {
+	//	time.Sleep(10 * time.Second)
+	//	*drainAllowedFlag = true
+	//}(&drainAllowedFlag)
 
 	// Start working with the events
 	for {
@@ -82,6 +87,8 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		// TODO enable DRAINING when capacity is more or less enough
 
 		// Update Prometheus metrics from AutoscalingGroups type data
 		//err = upgradePrometheusMetrics(autoscalingGroupPool.AutoscalingGroups)

@@ -12,7 +12,8 @@ import (
 
 const (
 	// Info messages
-	WorkerLaunchedMessage = "worker launched in background: draining the node: %s"
+	WorkerLaunchedMessage  = "worker launched in background: draining the node: %s"
+	DrainNotAllowedMessage = "drain is not allowed now, will be reviewed in the next loop"
 
 	// Error messages
 	DrainingErrorMessage        = "error draining the node '%s': %v"
@@ -21,7 +22,7 @@ const (
 
 // DrainNodesOnRisk TODO
 // TODO: Order events on the pool by AWS timestamp
-func DrainNodesOnRisk(client *kubernetes.Clientset, flags *ControllerFlags, eventPool *EventPool, drainAllowed chan bool) {
+func DrainNodesOnRisk(client *kubernetes.Clientset, flags *ControllerFlags, eventPool *EventPool, drainAllowed *bool) {
 
 	// Prepare kubectl to drain nodes
 	drainHelper := &drain.Helper{
@@ -40,8 +41,8 @@ func DrainNodesOnRisk(client *kubernetes.Clientset, flags *ControllerFlags, even
 
 	// Controlled loop to run workers
 	for {
-		if !<-drainAllowed {
-			log.Print("Drain is not allowed now, may be in the next loop")
+		if *drainAllowed == false {
+			log.Print(DrainNotAllowedMessage)
 			time.Sleep(*flags.TimeBetweenDrains)
 			continue
 		}
