@@ -53,14 +53,17 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 	}
 	go WatchAutoScalingGroupsTags(awsClient, flags, autoscalingGroupPool)
 
-	// Drain risky nodes on background
-	go DrainNodesOnRisk(client, flags, eventPool)
+	// Drain marked nodes on background.
+	// This goroutine is interrupted/resumed by a flag to be able
+	// to prevent scenarios where capacity and drainage happens at once
+	drainAllowedFlag := make(chan bool)
+	drainAllowedFlag <- false
+	go DrainNodesOnRisk(client, flags, eventPool, drainAllowedFlag)
 
 	// Start working with the events
 	for {
 		log.Print("starting a synchronization loop")
 
-		//log.Print(eventPool.Items)
 		log.Printf("events on the pool: %d", len(eventPool.Events.Items))
 		log.Printf("nodes on the pool: %d", len(nodePool.Nodes.Items))
 

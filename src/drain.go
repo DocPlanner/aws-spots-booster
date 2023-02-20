@@ -21,7 +21,7 @@ const (
 
 // DrainNodesOnRisk TODO
 // TODO: Order events on the pool by AWS timestamp
-func DrainNodesOnRisk(client *kubernetes.Clientset, flags *ControllerFlags, eventPool *EventPool) {
+func DrainNodesOnRisk(client *kubernetes.Clientset, flags *ControllerFlags, eventPool *EventPool, drainAllowed chan bool) {
 
 	// Prepare kubectl to drain nodes
 	drainHelper := &drain.Helper{
@@ -40,6 +40,11 @@ func DrainNodesOnRisk(client *kubernetes.Clientset, flags *ControllerFlags, even
 
 	// Controlled loop to run workers
 	for {
+		if !<-drainAllowed {
+			log.Print("Drain is not allowed now, may be in the next loop")
+			time.Sleep(*flags.TimeBetweenDrains)
+			continue
+		}
 
 		// Check whether the eventPool is already filled by the watcher
 		if len(eventPool.Events.Items) == 0 {
