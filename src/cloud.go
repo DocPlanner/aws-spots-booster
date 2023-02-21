@@ -166,6 +166,37 @@ func AwsSetDesiredCapacity(awsClient *session.Session, asgName string, desiredCa
 	return err
 }
 
+// TODO
+func AwsTerminateInstance(awsClient *session.Session, instanceName string) error {
+	svc := autoscaling.New(awsClient)
+
+	input := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
+		InstanceId:                     aws.String(instanceName),
+		ShouldDecrementDesiredCapacity: aws.Bool(true),
+	}
+
+	_, err := svc.TerminateInstanceInAutoScalingGroup(input)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case autoscaling.ErrCodeScalingActivityInProgressFault:
+				fmt.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
+			case autoscaling.ErrCodeResourceContentionFault:
+				fmt.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
+			default:
+				fmt.Println(aerr.Error())
+			}
+		} else {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			fmt.Println(err.Error())
+		}
+		return err
+	}
+
+	return err
+}
+
 // CalculateDesiredCapacityASGs return a list of ASGs, the values for them are the number of instances needed
 // This function will only return those ASGs that actually need changes according to the events
 func CalculateDesiredCapacityASGs(autoscalingGroupPool *AutoscalingGroupPool, nodeGroupEventsCount map[string]int) (asgsDesiredCapacity map[string]int, err error) {
@@ -180,7 +211,11 @@ func CalculateDesiredCapacityASGs(autoscalingGroupPool *AutoscalingGroupPool, no
 			if err != nil {
 				break
 			}
-			asgsDesiredCapacity[asg.Name] = currentCount + nodeGroupEventsCount[nodeGroupName]
+
+			// (Real Capacity) = (Ready Nodes) - (Rebalance Recommendations)
+			// (Desired State) = (Real Capacity) + 2 * (Rebalance Recommendations)
+			realCapacity := currentCount - nodeGroupEventsCount[nodeGroupName]
+			asgsDesiredCapacity[asg.Name] = realCapacity + 2*nodeGroupEventsCount[nodeGroupName]
 		}
 	}
 

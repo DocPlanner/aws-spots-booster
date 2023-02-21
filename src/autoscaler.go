@@ -20,52 +20,55 @@ import (
 // This function must be executed as a go routine
 func WatchStatusConfigmap(client *kubernetes.Clientset, flags *ControllerFlags, autoscalingGroupPool *AutoscalingGroupPool) {
 
-	// Get configmap from the cluster
-	configmapWatcher, err := client.CoreV1().ConfigMaps(*flags.CAStatusNamespace).Watch(context.TODO(), metav1.ListOptions{
-		FieldSelector: fields.Set{"metadata.name": *flags.CAConfigmapName}.AsSelector().String(),
-	})
-	if err != nil {
-		log.Fatal(ConfigmapRetrieveErrorMessage)
-	}
+	// Ensure retry to create a watcher when failing
+	for {
+		// Get configmap from the cluster
+		configmapWatcher, err := client.CoreV1().ConfigMaps(*flags.CAStatusNamespace).Watch(context.TODO(), metav1.ListOptions{
+			FieldSelector: fields.Set{"metadata.name": *flags.CAConfigmapName}.AsSelector().String(),
+		})
+		if err != nil {
+			log.Fatal(ConfigmapRetrieveErrorMessage)
+		}
 
-	for event := range configmapWatcher.ResultChan() {
+		for event := range configmapWatcher.ResultChan() {
 
-		configmapObject := event.Object.(*v1.ConfigMap)
+			configmapObject := event.Object.(*v1.ConfigMap)
 
-		switch event.Type {
-		case watch.Added, watch.Modified:
-			log.Printf("configmap added: %s/%s", configmapObject.Namespace, configmapObject.Name) // TODO: Improve logging
-			autoscalingGroupsNames := ParseAutoscalingGroupsNames(configmapObject.Data["status"])
-			autoscalingGroupsHealthArgs := ParseAutoscalingGroupsHealthArguments(configmapObject.Data["status"])
+			switch event.Type {
+			case watch.Added, watch.Modified:
+				log.Printf("configmap changed: %s/%s", configmapObject.Namespace, configmapObject.Name) // TODO: Improve logging
+				autoscalingGroupsNames := ParseAutoscalingGroupsNames(configmapObject.Data["status"])
+				autoscalingGroupsHealthArgs := ParseAutoscalingGroupsHealthArguments(configmapObject.Data["status"])
 
-			autoscalingGroups, err := GetAutoscalingGroupsObject(autoscalingGroupsNames, autoscalingGroupsHealthArgs)
-			if err != nil {
-				log.Print(ConfigMapParseErrorMessage)
-			}
+				autoscalingGroups, err := GetAutoscalingGroupsObject(autoscalingGroupsNames, autoscalingGroupsHealthArgs)
+				if err != nil {
+					log.Print(ConfigMapParseErrorMessage)
+				}
 
-			// Create all the ASGs when not already present
-			if len(autoscalingGroupPool.AutoscalingGroups) == 0 {
-				autoscalingGroupPool.Lock.Lock()
-				autoscalingGroupPool.AutoscalingGroups = *autoscalingGroups
-				autoscalingGroupPool.Lock.Unlock()
-				continue
-			}
+				// Create all the ASGs when not already present
+				if len(autoscalingGroupPool.AutoscalingGroups) == 0 {
+					autoscalingGroupPool.Lock.Lock()
+					autoscalingGroupPool.AutoscalingGroups = *autoscalingGroups
+					autoscalingGroupPool.Lock.Unlock()
+					continue
+				}
 
-			// Update health values into the ASG objects
-			// Iterate this way not to overwrite changes done by another goroutines
-			for _, objectASG := range autoscalingGroupPool.AutoscalingGroups {
+				// Update health values into the ASG objects
+				// Iterate this way not to overwrite changes done by another goroutines
+				for _, objectASG := range autoscalingGroupPool.AutoscalingGroups {
 
-				for _, calculatedASG := range *autoscalingGroups {
-					if calculatedASG.Name == objectASG.Name {
-						autoscalingGroupPool.Lock.Lock()
-						objectASG.Health = calculatedASG.Health
-						autoscalingGroupPool.Lock.Unlock()
+					for _, calculatedASG := range *autoscalingGroups {
+						if calculatedASG.Name == objectASG.Name {
+							autoscalingGroupPool.Lock.Lock()
+							objectASG.Health = calculatedASG.Health
+							autoscalingGroupPool.Lock.Unlock()
+						}
 					}
 				}
-			}
 
-		case watch.Deleted:
-			log.Fatal("configmap deleted, stopping the program ") // TODO: Improve logging
+			case watch.Deleted:
+				log.Fatal("configmap deleted, stopping the program ") // TODO: Improve logging
+			}
 		}
 	}
 }

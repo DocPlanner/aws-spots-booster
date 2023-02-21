@@ -20,11 +20,14 @@ const (
 	// Event reasons
 	RebalanceEvent = "RebalanceRecommendation"
 
-	// Nodegroup labels
+	// AWSNodeGroupLabel is the node's label to store the name of the node-group for a node
 	AWSNodeGroupLabel = "eks.amazonaws.com/nodegroup"
 
+	// IgnoreRecentReadyNodeAnnotation is an annotation to ignore recently added nodes from recently added lists
+	IgnoreRecentReadyNodeAnnotation = "asbooster.docplanner.com/ignore-on-ready-count"
+
 	//
-	CleanKubernetesEventsLoopTime = 2 * time.Second
+	WatchersLoopTime = 2 * time.Second
 )
 
 // WatchNodes watches for nodes on k8s and keep a pool up-to-date with them
@@ -32,39 +35,56 @@ const (
 // This function must be executed as a go routine
 func WatchNodes(client *kubernetes.Clientset, nodePool *NodePool) {
 
-	nodesWatcher, err := client.CoreV1().Nodes().Watch(context.TODO(), metav1.ListOptions{})
+	// Ensure retry to create a watcher when failing
+	for {
 
-	if err != nil {
-		log.Fatal(err)
-	}
+		// Something failed, reset the pool
+		nodePool.Lock.Lock()
+		nodePool.Nodes = v1.NodeList{}
+		nodePool.Lock.Unlock()
 
-	for event := range nodesWatcher.ResultChan() {
+		nodesWatcher, err := client.CoreV1().Nodes().Watch(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			log.Print(err)
+		}
 
-		nodeObject := event.Object.(*v1.Node)
+		for event := range nodesWatcher.ResultChan() {
 
-		switch event.Type {
-		case watch.Added:
-			log.Printf("node added, checking the node pool: %s", nodeObject.Name)
+			nodeObject := event.Object.(*v1.Node)
 
-			nodePool.Lock.Lock()
-			nodePool.Nodes.Items = append(nodePool.Nodes.Items, *nodeObject)
-			nodePool.Lock.Unlock()
+			log.Printf("node change detected on '%s', checking the node pool", nodeObject.Name) // TODO INFO
 
-		case watch.Deleted:
-			log.Printf("node deleted, checking the node pool: %s", nodeObject.Name)
+			switch event.Type {
+			case watch.Added:
+				nodePool.Lock.Lock()
+				nodePool.Nodes.Items = append(nodePool.Nodes.Items, *nodeObject)
+				nodePool.Lock.Unlock()
 
-			// Remove the event from the pool: last item to current position, then delete last
-			for storedNodeIndex, storedNode := range nodePool.Nodes.Items {
-
-				if nodeObject.Name == storedNode.Name {
-					nodePool.Lock.Lock()
-					nodePool.Nodes.Items[storedNodeIndex] = nodePool.Nodes.Items[len(nodePool.Nodes.Items)-1]
-					nodePool.Nodes.Items = nodePool.Nodes.Items[:len(nodePool.Nodes.Items)-1]
-					nodePool.Lock.Unlock()
-					break
+			// Substitute previous with it
+			case watch.Modified:
+				for storedNodeIndex, storedNode := range nodePool.Nodes.Items {
+					if nodeObject.Name == storedNode.Name {
+						nodePool.Lock.Lock()
+						nodePool.Nodes.Items[storedNodeIndex] = *nodeObject
+						nodePool.Lock.Unlock()
+						break
+					}
+				}
+			// Remove it from the pool: approach is last item to current position, then delete last
+			case watch.Deleted:
+				for storedNodeIndex, storedNode := range nodePool.Nodes.Items {
+					if nodeObject.Name == storedNode.Name {
+						nodePool.Lock.Lock()
+						nodePool.Nodes.Items[storedNodeIndex] = nodePool.Nodes.Items[len(nodePool.Nodes.Items)-1]
+						nodePool.Nodes.Items = nodePool.Nodes.Items[:len(nodePool.Nodes.Items)-1]
+						nodePool.Lock.Unlock()
+						break
+					}
 				}
 			}
 		}
+
+		time.Sleep(WatchersLoopTime)
 	}
 }
 
@@ -72,50 +92,63 @@ func WatchNodes(client *kubernetes.Clientset, nodePool *NodePool) {
 // This function must be executed as a go routine
 func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *EventPool) {
 
-	eventWatcher, err := client.CoreV1().Events("default").Watch(context.TODO(), metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("reason=%s", eventReason),
-	})
+	// Ensure retry to create a watcher when failing
+	for {
 
-	if err != nil {
-		log.Fatal(err)
-	}
+		// Something failed, reset the pool
+		eventPool.Lock.Lock()
+		eventPool.Events = v1.EventList{}
+		eventPool.Lock.Unlock()
 
-	for event := range eventWatcher.ResultChan() {
+		eventWatcher, err := client.CoreV1().Events("default").Watch(context.TODO(), metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("reason=%s", eventReason),
+		})
 
-		eventObject := event.Object.(*v1.Event)
+		if err != nil {
+			log.Print(err)
+		}
 
-		switch event.Type {
-		case watch.Added:
-			log.Printf("event added, checking the pool: %s/%s", eventObject.Namespace, eventObject.Name)
+		for event := range eventWatcher.ResultChan() {
 
-			// Filter repeated events coming from same nodes. New will replace the old
-			for storedEventIndex, storedEvent := range eventPool.Events.Items {
-				if eventObject.InvolvedObject.Name == storedEvent.InvolvedObject.Name {
-					eventPool.Lock.Lock()
-					eventPool.Events.Items[storedEventIndex] = *eventObject
-					eventPool.Lock.Unlock()
-					break
+			eventObject := event.Object.(*v1.Event)
+
+			switch event.Type {
+			case watch.Added:
+				log.Printf("event change detected on '%s/%s', checking the pool", eventObject.Namespace, eventObject.Name)
+
+				// Filter repeated events coming from same nodes. New will replace the old
+				for storedEventIndex, storedEvent := range eventPool.Events.Items {
+					if eventObject.InvolvedObject.Name == storedEvent.InvolvedObject.Name {
+						eventPool.Lock.Lock()
+						eventPool.Events.Items[storedEventIndex] = *eventObject
+						eventPool.Lock.Unlock()
+						break
+					}
 				}
-			}
 
-			// Not found, store it
-			eventPool.Events.Items = append(eventPool.Events.Items, *eventObject)
+				// Not found, store it
+				eventPool.Lock.Lock()
+				eventPool.Events.Items = append(eventPool.Events.Items, *eventObject)
+				eventPool.Lock.Unlock()
 
-		case watch.Deleted:
-			log.Printf("event deleted, checking the pool: %s/%s", eventObject.Namespace, eventObject.Name)
+			case watch.Deleted:
+				log.Printf("event deleted, checking the pool: %s/%s", eventObject.Namespace, eventObject.Name)
 
-			// Remove the event from the pool: last item to current position, then delete last
-			for storedEventIndex, storedEvent := range eventPool.Events.Items {
+				// Remove the event from the pool: last item to current position, then delete last
+				for storedEventIndex, storedEvent := range eventPool.Events.Items {
 
-				if eventObject.InvolvedObject.Name == storedEvent.InvolvedObject.Name {
-					eventPool.Lock.Lock()
-					eventPool.Events.Items[storedEventIndex] = eventPool.Events.Items[len(eventPool.Events.Items)-1]
-					eventPool.Events.Items = eventPool.Events.Items[:len(eventPool.Events.Items)-1]
-					eventPool.Lock.Unlock()
-					break
+					if eventObject.InvolvedObject.Name == storedEvent.InvolvedObject.Name {
+						eventPool.Lock.Lock()
+						eventPool.Events.Items[storedEventIndex] = eventPool.Events.Items[len(eventPool.Events.Items)-1]
+						eventPool.Events.Items = eventPool.Events.Items[:len(eventPool.Events.Items)-1]
+						eventPool.Lock.Unlock()
+						break
+					}
 				}
 			}
 		}
+
+		time.Sleep(WatchersLoopTime)
 	}
 }
 
@@ -169,9 +202,11 @@ func CleanKubernetesEvents(client *kubernetes.Clientset, eventPool *EventPool, n
 			}
 		}
 
-		time.Sleep(CleanKubernetesEventsLoopTime)
+		time.Sleep(WatchersLoopTime)
 	}
 }
+
+// Side functions
 
 // GetNodeGroupNames return a slice with the names of the node-groups
 func GetNodeGroupNames(nodePool *NodePool) (nodeGroupNames []string) {
@@ -242,8 +277,149 @@ func GetEventCountByNodeGroup(eventPool *EventPool, nodePool *NodePool) (nodeGro
 	return nodeGroupEventsCount
 }
 
-// GetEventsByCordonTimestamp TODO
-func GetEventsByCordonTimestamp(eventPool *EventPool) (orderedEvents []*v1.Event) {
+// GetNodesByNodeGroup return a list of Node-groups, the value for each of them is a list with its nodes
+func GetNodesByNodeGroup(nodePool *NodePool) (nodeGroupNodeList map[string][]*v1.Node) {
 
-	return
+	nodeGroupNodeList = map[string][]*v1.Node{}
+
+	// Fill the slice with defaults, just in case no nodes for the node-groups
+	nodeGroupNames := GetNodeGroupNames(nodePool)
+	for _, nodeGroupName := range nodeGroupNames {
+		nodeGroupNodeList[nodeGroupName] = []*v1.Node{}
+	}
+
+	for _, node := range nodePool.Nodes.Items {
+
+		// Check if nodegroup label is present
+		nodeGroupName, nodeGroupLabelFound := node.Labels[AWSNodeGroupLabel]
+		if !nodeGroupLabelFound {
+			continue
+		}
+
+		// Nodegroup name found, increase the account there for this event
+		nodeGroupNodeList[nodeGroupName] = append(nodeGroupNodeList[nodeGroupName], &node)
+	}
+
+	return nodeGroupNodeList
+}
+
+// GetNodeCountByNodeGroup return a list of Node-groups, the value for each of them is its number of nodes
+func GetNodeCountByNodeGroup(nodePool *NodePool) (nodeGroupNodesCount map[string]int) {
+
+	nodeGroupNodeLists := GetNodesByNodeGroup(nodePool)
+
+	nodeGroupNodesCount = map[string]int{}
+
+	// Count events related to each node group
+	for nodeGroupName, nodeGroupNodeList := range nodeGroupNodeLists {
+		nodeGroupNodesCount[nodeGroupName] = len(nodeGroupNodeList)
+	}
+
+	return nodeGroupNodesCount
+}
+
+// GetCordonedNodesByNodeGroup return a list of Node-groups, the value for each of them is a list with its cordoned nodes
+func GetCordonedNodesByNodeGroup(nodePool *NodePool) (nodeGroupNodeList map[string][]*v1.Node) {
+
+	nodeGroupNodeList = map[string][]*v1.Node{}
+
+	// Fill the slice with defaults, just in case no nodes for the node-groups
+	nodeGroupNames := GetNodeGroupNames(nodePool)
+	for _, nodeGroupName := range nodeGroupNames {
+		nodeGroupNodeList[nodeGroupName] = []*v1.Node{}
+	}
+
+	for _, node := range nodePool.Nodes.Items {
+
+		// Check if nodegroup label is present
+		nodeGroupName, nodeGroupLabelFound := node.Labels[AWSNodeGroupLabel]
+		if !nodeGroupLabelFound {
+			continue
+		}
+
+		//
+		if node.Spec.Unschedulable == true {
+			nodeGroupNodeList[nodeGroupName] = append(nodeGroupNodeList[nodeGroupName], &node)
+		}
+	}
+
+	return nodeGroupNodeList
+}
+
+// GetCordonedNodeCountByNodeGroup return a list of Node-groups, the value for each of them is its number of cordoned nodes
+func GetCordonedNodeCountByNodeGroup(nodePool *NodePool) (nodeGroupNodesCount map[string]int) {
+
+	nodeGroupNodeLists := GetCordonedNodesByNodeGroup(nodePool)
+
+	nodeGroupNodesCount = map[string]int{}
+
+	// Count events related to each node group
+	for nodeGroupName, nodeGroupNodeList := range nodeGroupNodeLists {
+		nodeGroupNodesCount[nodeGroupName] = len(nodeGroupNodeList)
+	}
+
+	return nodeGroupNodesCount
+}
+
+// GetRecentlyReadyNodesByNodeGroup return a list of Node-groups, the value for each of them is its latest Ready nodes.
+// Nodes annotated with IgnoreRecentReadyNodeAnnotation can be ignored
+func GetRecentlyReadyNodesByNodeGroup(nodePool *NodePool, durationBefore time.Duration, ignoreAnnotated bool) (nodeGroupNodeList map[string][]*v1.Node) {
+
+	nodeGroupNodeList = map[string][]*v1.Node{}
+
+	// Fill the slice with defaults, just in case no nodes for the node-groups
+	nodeGroupNames := GetNodeGroupNames(nodePool)
+	for _, nodeGroupName := range nodeGroupNames {
+		nodeGroupNodeList[nodeGroupName] = []*v1.Node{}
+	}
+
+	// Look for recently Ready nodes
+outterLoop:
+	for _, node := range nodePool.Nodes.Items {
+
+		// Check if nodegroup label is present
+		nodeGroupName, nodeGroupLabelFound := node.Labels[AWSNodeGroupLabel]
+		if !nodeGroupLabelFound {
+			continue
+		}
+
+		// Ignore nodes with well-known annotation
+		if ignoreAnnotated {
+			for annotationKey, _ := range node.Annotations {
+				if annotationKey == IgnoreRecentReadyNodeAnnotation {
+					continue outterLoop
+				}
+			}
+		}
+
+		// Look into the conditions for last Ready transition
+		for _, condition := range node.Status.Conditions {
+			currentTime := time.Now()
+
+			if condition.Type == v1.NodeReady && node.Spec.Unschedulable == false {
+				someTimeBefore := currentTime.Add(durationBefore)
+				if condition.LastTransitionTime.After(someTimeBefore) {
+					nodeGroupNodeList[nodeGroupName] = append(nodeGroupNodeList[nodeGroupName], node.DeepCopy())
+				}
+			}
+		}
+	}
+
+	return nodeGroupNodeList
+}
+
+// GetRecentlyReadyNodeCountByNodeGroup return a list of Node-groups, the value for each of them is its number of the latest Ready nodes.
+// Nodes annotated with IgnoreRecentReadyNodeAnnotation can be ignored
+func GetRecentlyReadyNodeCountByNodeGroup(nodePool *NodePool, durationBefore time.Duration, ignoreAnnotated bool) (nodeGroupNodesCount map[string]int) {
+
+	nodeGroupNodeLists := GetRecentlyReadyNodesByNodeGroup(nodePool, durationBefore, ignoreAnnotated)
+
+	nodeGroupNodesCount = map[string]int{}
+
+	// Count events related to each node group
+	for nodeGroupName, nodeGroupNodeList := range nodeGroupNodeLists {
+		nodeGroupNodesCount[nodeGroupName] = len(nodeGroupNodeList)
+	}
+
+	return nodeGroupNodesCount
 }

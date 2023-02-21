@@ -57,24 +57,37 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 	// This goroutine is interrupted/resumed by a flag to be able
 	// to prevent scenarios where capacity and drainage happens at once
 	var drainAllowedFlag bool = false
-	go DrainNodesOnRisk(client, flags, eventPool, &drainAllowedFlag)
+	//go DrainNodesOnRisk(client, awsClient, flags, eventPool, nodePool, &drainAllowedFlag)
+
+	// Launch a watcher TODO
+	// go DrainNodesOnRiskAuto(client, awsClient, flags, eventPool, nodePool)
 
 	// Testing flag
-	//go func(drainAllowedFlag *bool) {
-	//	time.Sleep(10 * time.Second)
-	//	*drainAllowedFlag = true
-	//}(&drainAllowedFlag)
+	go func(drainAllowedFlag *bool) {
+		time.Sleep(10 * time.Second)
+		*drainAllowedFlag = true
+	}(&drainAllowedFlag)
 
 	// Start working with the events
 	for {
-		log.Print("starting a synchronization loop")
 
 		log.Printf("events on the pool: %d", len(eventPool.Events.Items))
 		log.Printf("nodes on the pool: %d", len(nodePool.Nodes.Items))
 
+		// Get a map of node-group, each value is the count of its nodes
+		nodeGroupNodesCount := GetNodeCountByNodeGroup(nodePool)
+		log.Printf("nodes by nodegroup %v", nodeGroupNodesCount)
+
 		// Get a map of node-group, each value is the count of its events
 		nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
 		log.Printf("events by nodegroup %v", nodeGroupEventsCount)
+
+		// Get a map of node-group, each value is the count of its cordoned nodes
+		nodeGroupCordonedNodesCount := GetCordonedNodeCountByNodeGroup(nodePool)
+		log.Printf("cordoned nodes by nodegroup %v", nodeGroupCordonedNodesCount)
+
+		nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, false)
+		log.Printf("RECENTLY READY nodes by nodegroup %v", nodeGroupRecentReadyNodesCount)
 
 		// Calculate final capacity for the ASGs
 		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(autoscalingGroupPool, nodeGroupEventsCount)
