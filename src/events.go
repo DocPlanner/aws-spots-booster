@@ -54,19 +54,17 @@ func WatchNodes(client *kubernetes.Clientset, nodePool *NodePool) {
 
 			log.Printf("node change detected on '%s', checking the node pool", nodeObject.Name) // TODO INFO
 
+			nodePool.Lock.Lock()
+
 			switch event.Type {
 			case watch.Added:
-				nodePool.Lock.Lock()
 				nodePool.Nodes.Items = append(nodePool.Nodes.Items, *nodeObject)
-				nodePool.Lock.Unlock()
 
 			// Substitute previous with it
 			case watch.Modified:
 				for storedNodeIndex, storedNode := range nodePool.Nodes.Items {
 					if nodeObject.Name == storedNode.Name {
-						nodePool.Lock.Lock()
 						nodePool.Nodes.Items[storedNodeIndex] = *nodeObject
-						nodePool.Lock.Unlock()
 						break
 					}
 				}
@@ -74,14 +72,13 @@ func WatchNodes(client *kubernetes.Clientset, nodePool *NodePool) {
 			case watch.Deleted:
 				for storedNodeIndex, storedNode := range nodePool.Nodes.Items {
 					if nodeObject.Name == storedNode.Name {
-						nodePool.Lock.Lock()
 						nodePool.Nodes.Items[storedNodeIndex] = nodePool.Nodes.Items[len(nodePool.Nodes.Items)-1]
 						nodePool.Nodes.Items = nodePool.Nodes.Items[:len(nodePool.Nodes.Items)-1]
-						nodePool.Lock.Unlock()
 						break
 					}
 				}
 			}
+			nodePool.Lock.Unlock()
 		}
 
 		time.Sleep(WatchersLoopTime)
@@ -112,6 +109,8 @@ func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *Ev
 
 			eventObject := event.Object.(*v1.Event)
 
+			eventPool.Lock.Lock()
+
 			switch event.Type {
 			case watch.Added:
 				log.Printf("event change detected on '%s/%s', checking the pool", eventObject.Namespace, eventObject.Name)
@@ -119,17 +118,13 @@ func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *Ev
 				// Filter repeated events coming from same nodes. New will replace the old
 				for storedEventIndex, storedEvent := range eventPool.Events.Items {
 					if eventObject.InvolvedObject.Name == storedEvent.InvolvedObject.Name {
-						eventPool.Lock.Lock()
 						eventPool.Events.Items[storedEventIndex] = *eventObject
-						eventPool.Lock.Unlock()
 						break
 					}
 				}
 
 				// Not found, store it
-				eventPool.Lock.Lock()
 				eventPool.Events.Items = append(eventPool.Events.Items, *eventObject)
-				eventPool.Lock.Unlock()
 
 			case watch.Deleted:
 				log.Printf("event deleted, checking the pool: %s/%s", eventObject.Namespace, eventObject.Name)
@@ -138,14 +133,14 @@ func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *Ev
 				for storedEventIndex, storedEvent := range eventPool.Events.Items {
 
 					if eventObject.InvolvedObject.Name == storedEvent.InvolvedObject.Name {
-						eventPool.Lock.Lock()
 						eventPool.Events.Items[storedEventIndex] = eventPool.Events.Items[len(eventPool.Events.Items)-1]
 						eventPool.Events.Items = eventPool.Events.Items[:len(eventPool.Events.Items)-1]
-						eventPool.Lock.Unlock()
 						break
 					}
 				}
 			}
+
+			eventPool.Lock.Unlock()
 		}
 
 		time.Sleep(WatchersLoopTime)

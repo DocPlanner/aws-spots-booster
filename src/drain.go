@@ -45,10 +45,14 @@ func DrainNodesOnRiskAuto(client *kubernetes.Clientset, awsClient *session.Sessi
 		ErrOut: os.Stdout,
 	}
 
-	//
 	for {
-
-		// TODO Dry run??
+		// Lock process on dry-run
+		// TODO improve logging on dry-run
+		if *flags.DryRun == true {
+			log.Print(DrainNotAllowedMessage)
+			time.Sleep(*flags.TimeBetweenDrains)
+			continue
+		}
 
 		var waitGroup sync.WaitGroup
 
@@ -58,7 +62,7 @@ func DrainNodesOnRiskAuto(client *kubernetes.Clientset, awsClient *session.Sessi
 			continue
 		}
 
-		// Calculate recently added nodes
+		// Calculate recently added nodes, ignoring those with 'IgnoreRecentReadyNodeAnnotation' annotation
 		recentlyAddedCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, true)
 		groupedEvents := GetEventsByNodeGroup(eventPool, nodePool)
 
