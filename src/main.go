@@ -20,9 +20,8 @@ const (
 	GenerateRestClientMessage = "generating rest client to connect to kubernetes"
 
 	// Error messages
+	GenerateAwsClientErrorMessage  = "error connecting to aws api: %s"
 	GenerateRestClientErrorMessage = "error connecting to kubernetes api: %s"
-	ConfigmapRetrieveErrorMessage  = "error obtaining cluster-autoscaler status configmap from the cluster"
-	ConfigMapParseErrorMessage     = "error parsing status configmap (hint: syntax has changed between cluster-autoscaler versions?)"
 	MetricsUpdateErrorMessage      = "imposible to update prometheus metrics"
 	MetricsWebserverErrorMessage   = "imposible to launch metrics webserver: %s"
 )
@@ -49,24 +48,12 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 	//
 	awsClient, err := AwsCreateSession()
 	if err != nil {
-		log.Print("error creating AWS client")
+		log.Printf(GenerateAwsClientErrorMessage, err)
 	}
 	go WatchAutoScalingGroupsTags(awsClient, flags, autoscalingGroupPool)
 
-	// Drain marked nodes on background.
-	// This goroutine is interrupted/resumed by a flag to be able
-	// to prevent scenarios where capacity and drainage happens at once
-	//var drainAllowedFlag bool = false
-	//go DrainNodesOnRisk(client, awsClient, flags, eventPool, nodePool, &drainAllowedFlag)
-
-	// Launch a watcher TODO
-	// go DrainNodesOnRiskAuto(client, awsClient, flags, eventPool, nodePool)
-
-	// Testing flag
-	//go func(drainAllowedFlag *bool) {
-	//	time.Sleep(10 * time.Second)
-	//	*drainAllowedFlag = true
-	//}(&drainAllowedFlag)
+	// Launch a drainer in the background
+	go DrainNodesUnderRisk(client, awsClient, flags, eventPool, nodePool)
 
 	// Start working with the events
 	for {
@@ -102,10 +89,10 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 		}
 
 		// Update Prometheus metrics from AutoscalingGroups type data
-		//err = upgradePrometheusMetrics(autoscalingGroupPool.AutoscalingGroups)
-		//if err != nil {
-		//	log.Print(MetricsUpdateErrorMessage)
-		//}
+		err = upgradePrometheusMetrics(eventPool, nodePool, autoscalingGroupPool)
+		if err != nil {
+			log.Print(MetricsUpdateErrorMessage)
+		}
 
 		time.Sleep(SynchronizationScheduleSeconds * time.Second)
 	}
@@ -128,7 +115,7 @@ func main() {
 
 	flags.TimeBetweenDrains = flag.Duration("time-between-drains", 60*time.Second, "duration between scheduling a batch drainages and the following")
 	flags.DrainTimeout = flag.Duration("drain-timeout", 120*time.Second, "duration to consider a drain as done when not finished")
-	flags.ConcurrentDrains = flag.Int("concurrent-drains", 5, "nodes to drain at once")
+	flags.MaxConcurrentDrains = flag.Int("max-concurrent-drains", 5, "maximum number of nodes to drain at once")
 
 	flags.MetricsPort = flag.String("metrics-port", "2112", "port where metrics web-server will run")
 	flags.MetricsHost = flag.String("metrics-host", "0.0.0.0", "host where metrics web-server will run")

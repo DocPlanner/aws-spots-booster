@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"golang.org/x/exp/maps"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -31,12 +33,30 @@ func GetKubernetesClient(connectionMode string, kubeconfigPath string) (*kuberne
 	return client, err
 }
 
-// DeleteKubernetesEvent delete an event from the cluster
-func DeleteKubernetesEvent(client *kubernetes.Clientset, namespace string, eventName string) (err error) {
+// KubernetesDeleteEvent delete an event from the cluster
+func KubernetesDeleteEvent(client *kubernetes.Clientset, namespace string, eventName string) (err error) {
 
 	err = client.CoreV1().Events(namespace).Delete(context.TODO(), eventName, metav1.DeleteOptions{
 		// DryRun: []string{"All"},
 	})
+
+	return err
+}
+
+// KubernetesAnnotateNode add some annotations to a node
+func KubernetesAnnotateNode(client *kubernetes.Clientset, node *v1.Node, annotations map[string]string) (err error) {
+
+	// Merge annotations with existing ones
+	maps.Copy(annotations, node.Annotations)
+	node.SetAnnotations(annotations)
+
+	// Update the object in the cluster
+	_, err = client.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{
+		// DryRun: []string{"All"},
+	})
+	if err != nil {
+		return err
+	}
 
 	return err
 }

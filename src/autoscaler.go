@@ -15,6 +15,12 @@ import (
 	"strings"
 )
 
+const (
+	// Error messages
+	ConfigmapRetrieveErrorMessage = "error obtaining cluster-autoscaler status configmap from the cluster"
+	ConfigMapParseErrorMessage    = "error parsing status configmap (hint: syntax has changed between cluster-autoscaler versions?)"
+)
+
 // WatchStatusConfigmap watches for changes on Cluster Autoscaler's status-configmap on k8s
 // Done this way to reduce the calls done to Kube API
 // This function must be executed as a go routine

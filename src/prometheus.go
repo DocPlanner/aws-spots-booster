@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"strconv"
 )
 
 const (
@@ -14,114 +13,57 @@ const (
 
 // TODO UPDATE METRICS FOR THIS CONTROLLER
 var (
-	mReady = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "ready_total",
-		Help: "number of nodes ready to schedule pods",
+	mNodegroupEventsTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: MetricsPrefix + "events_total",
+		Help: "number of rebalance recommendation events per nodegroup",
 	}, []string{"nodegroup"})
 
-	mUnready = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "unready_total",
-		Help: "number of nodes not ready to schedule pods",
+	mNodegroupNodesTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: MetricsPrefix + "nodes_total",
+		Help: "number of nodes per nodegroup",
 	}, []string{"nodegroup"})
 
-	mNotStarted = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "notstarted_total",
-		Help: "TODO", // TODO
+	mNodegroupCordonedNodesTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: MetricsPrefix + "cordoned_nodes_total",
+		Help: "number of cordoned nodes per nodegroup",
 	}, []string{"nodegroup"})
 
-	mLongNotStarted = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "longnotstarted_total",
-		Help: "TODO", // TODO
-	}, []string{"nodegroup"})
-
-	mRegistered = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "registered_total",
-		Help: "TODO", // TODO
-	}, []string{"nodegroup"})
-
-	mUnregistered = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "unregistered_total",
-		Help: "TODO", // TODO
-	}, []string{"nodegroup"})
-
-	mCloudProviderTarget = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "cloudprovidertarget_total",
-		Help: "desired number of nodes in the provider",
-	}, []string{"nodegroup"})
-
-	mCloudProviderMinSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "cloudproviderminsize_total",
-		Help: "minimum number of nodes in the provider",
-	}, []string{"nodegroup"})
-
-	mCloudProviderMaxSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: MetricsPrefix + "cloudprovidermaxsize_total",
-		Help: "maximum number of nodes in the provider",
+	mNodegroupRecentlyReadyNodesTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: MetricsPrefix + "recently_ready_nodes_total",
+		Help: "number of recently ready nodes per nodegroup. those created since " + DurationToConsiderNewNodes.String() + " ago",
 	}, []string{"nodegroup"})
 )
 
 // TODO
-func upgradePrometheusMetrics(autoscalingGroups *AutoscalingGroups) (err error) {
+func upgradePrometheusMetrics(eventPool *EventPool, nodePool *NodePool, autoscalingGroupPool *AutoscalingGroupPool) (err error) {
 
-	for _, nodegroup := range *autoscalingGroups {
+	nodegroups := GetNodeGroupNames(nodePool)
 
-		// Convert all the parsed strings into float64
-		// TODO abstract this section to a function, oh dirty Diana
-		healthReady, err := strconv.ParseFloat(nodegroup.Health.Ready, 64)
-		if err != nil {
-			return err
-		}
+	// Get a map of node-groups, each value is the count of its events
+	nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
 
-		healthUnready, err := strconv.ParseFloat(nodegroup.Health.Unready, 64)
-		if err != nil {
-			return err
-		}
+	// Get a map of node-groups, each value is the count of its nodes
+	nodeGroupNodesCount := GetNodeCountByNodeGroup(nodePool)
 
-		healthNotStarted, err := strconv.ParseFloat(nodegroup.Health.NotStarted, 64)
-		if err != nil {
-			return err
-		}
+	// Get a map of node-groups, each value is the count of its cordoned nodes
+	nodeGroupCordonedNodesCount := GetCordonedNodeCountByNodeGroup(nodePool)
 
-		healthLongNotStarted, err := strconv.ParseFloat(nodegroup.Health.LongNotStarted, 64)
-		if err != nil {
-			return err
-		}
+	// Get a map of node-group, each value is the count of its recently-ready nodes
+	nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, false)
 
-		healthRegistered, err := strconv.ParseFloat(nodegroup.Health.Registered, 64)
-		if err != nil {
-			return err
-		}
+	for _, nodegroupName := range nodegroups {
 
-		healthLongUnregistered, err := strconv.ParseFloat(nodegroup.Health.LongUnregistered, 64)
-		if err != nil {
-			return err
-		}
-
-		healthCloudProviderTarget, err := strconv.ParseFloat(nodegroup.Health.CloudProviderTarget, 64)
-		if err != nil {
-			return err
-		}
-
-		healthCloudProviderMinSize, err := strconv.ParseFloat(nodegroup.Health.CloudProviderMinSize, 64)
-		if err != nil {
-			return err
-		}
-
-		healthCloudProviderMaxSize, err := strconv.ParseFloat(nodegroup.Health.CloudProviderMaxSize, 64)
-		if err != nil {
-			return err
-		}
+		// Convert all the values to proper format
+		nodegroupEventsTotal := float64(nodeGroupEventsCount[nodegroupName])
+		nodegroupNodesTotal := float64(nodeGroupNodesCount[nodegroupName])
+		nodegroupCordonedNodesTotal := float64(nodeGroupCordonedNodesCount[nodegroupName])
+		nodegroupRecentlyReadyNodesTotal := float64(nodeGroupRecentReadyNodesCount[nodegroupName])
 
 		// Update all the metrics for this nodegroup
-		mReady.WithLabelValues(nodegroup.Name).Set(healthReady)
-		mUnready.WithLabelValues(nodegroup.Name).Set(healthUnready)
-		mNotStarted.WithLabelValues(nodegroup.Name).Set(healthNotStarted)
-		mLongNotStarted.WithLabelValues(nodegroup.Name).Set(healthLongNotStarted)
-		mRegistered.WithLabelValues(nodegroup.Name).Set(healthRegistered)
-		mUnregistered.WithLabelValues(nodegroup.Name).Set(healthLongUnregistered)
-		mCloudProviderTarget.WithLabelValues(nodegroup.Name).Set(healthCloudProviderTarget)
-		mCloudProviderMinSize.WithLabelValues(nodegroup.Name).Set(healthCloudProviderMinSize)
-		mCloudProviderMaxSize.WithLabelValues(nodegroup.Name).Set(healthCloudProviderMaxSize)
+		mNodegroupEventsTotal.WithLabelValues(nodegroupName).Set(nodegroupEventsTotal)
+		mNodegroupNodesTotal.WithLabelValues(nodegroupName).Set(nodegroupNodesTotal)
+		mNodegroupCordonedNodesTotal.WithLabelValues(nodegroupName).Set(nodegroupCordonedNodesTotal)
+		mNodegroupRecentlyReadyNodesTotal.WithLabelValues(nodegroupName).Set(nodegroupRecentlyReadyNodesTotal)
 	}
 
 	return nil
