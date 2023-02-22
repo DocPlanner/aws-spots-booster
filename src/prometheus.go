@@ -49,7 +49,7 @@ func upgradePrometheusMetrics(eventPool *EventPool, nodePool *NodePool, autoscal
 	nodeGroupCordonedNodesCount := GetCordonedNodeCountByNodeGroup(nodePool)
 
 	// Get a map of node-group, each value is the count of its recently-ready nodes
-	nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, false)
+	nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, true) // TODO: decide the policy
 
 	for _, nodegroupName := range nodegroups {
 

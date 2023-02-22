@@ -53,7 +53,9 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 	go WatchAutoScalingGroupsTags(awsClient, flags, autoscalingGroupPool)
 
 	// Launch a drainer in the background
-	go DrainNodesUnderRisk(client, awsClient, flags, eventPool, nodePool)
+	if !*flags.DisableDrain {
+		go DrainNodesUnderRisk(client, awsClient, flags, eventPool, nodePool)
+	}
 
 	// Start working with the events
 	for {
@@ -73,7 +75,7 @@ func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
 		nodeGroupCordonedNodesCount := GetCordonedNodeCountByNodeGroup(nodePool)
 		log.Printf("cordoned nodes by nodegroup %v", nodeGroupCordonedNodesCount)
 
-		nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, false)
+		nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, true)
 		log.Printf("RECENTLY READY nodes by nodegroup %v", nodeGroupRecentReadyNodesCount)
 
 		// Calculate final capacity for the ASGs
@@ -113,7 +115,8 @@ func main() {
 	flags.IgnoredAutoscalingGroups = flag.String("ignored-autoscaling-groups", "", "comma-separated list of autoscaling-group names to ignore on ASGs boosting")
 	flags.ExtraNodesOverCalculations = flag.Int("extra-nodes-over-calculation", 0, "extra nodes to add over calculated ones")
 
-	flags.TimeBetweenDrains = flag.Duration("time-between-drains", 60*time.Second, "duration between scheduling a batch drainages and the following")
+	flags.DisableDrain = flag.Bool("disable-drain", false, "disable drain-and-destroy process for nodes under risk (not recommended)")
+	flags.TimeBetweenDrains = flag.Duration("time-between-drains", 15*time.Second, "duration between scheduling a batch drainages and the following (when new nodes are ready)")
 	flags.DrainTimeout = flag.Duration("drain-timeout", 120*time.Second, "duration to consider a drain as done when not finished")
 	flags.MaxConcurrentDrains = flag.Int("max-concurrent-drains", 5, "maximum number of nodes to drain at once")
 

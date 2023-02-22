@@ -67,6 +67,7 @@ type ControllerFlags struct {
 	ExtraNodesOverCalculations *int
 
 	// Drain process
+	DisableDrain        *bool
 	TimeBetweenDrains   *time.Duration
 	DrainTimeout        *time.Duration
 	MaxConcurrentDrains *int
