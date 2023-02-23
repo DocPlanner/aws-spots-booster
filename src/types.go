@@ -69,10 +69,11 @@ type ControllerFlags struct {
 	ExtraNodesOverCalculations *int
 
 	// Drain process
-	DisableDrain        *bool
-	TimeBetweenDrains   *time.Duration
-	DrainTimeout        *time.Duration
-	MaxConcurrentDrains *int
+	DisableDrain          *bool
+	TimeBetweenDrains     *time.Duration
+	DrainTimeout          *time.Duration
+	MaxConcurrentDrains   *int
+	IgnorePodsGracePeriod *bool
 
 	// Metrics
 	MetricsPort *string

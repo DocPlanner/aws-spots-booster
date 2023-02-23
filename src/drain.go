@@ -36,7 +36,7 @@ func DrainNodesUnderRisk(ctx *Ctx, client *kubernetes.Clientset, awsClient *sess
 		Client: client,
 		Force:  true,
 
-		GracePeriodSeconds: -1, // TODO: Decide the policy, 0, or -1??
+		GracePeriodSeconds: -1,
 
 		IgnoreAllDaemonSets: true,
 		DeleteEmptyDirData:  true,
@@ -44,6 +44,11 @@ func DrainNodesUnderRisk(ctx *Ctx, client *kubernetes.Clientset, awsClient *sess
 
 		Out:    os.Stdout,
 		ErrOut: os.Stdout,
+	}
+
+	//
+	if *ctx.Flags.IgnorePodsGracePeriod {
+		drainHelper.GracePeriodSeconds = 0
 	}
 
 	for {
