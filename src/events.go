@@ -51,7 +51,7 @@ func WatchNodes(ctx *Ctx, client *kubernetes.Clientset, nodePool *NodePool) {
 
 			nodeObject := event.Object.(*v1.Node)
 
-			ctx.Logger.Infof(NodeChangedMessage, nodeObject.Name) // TODO INFO
+			ctx.Logger.Debugf(NodeChangedMessage, nodeObject.Name) // TODO INFO
 
 			nodePool.Lock.Lock()
 
@@ -108,7 +108,7 @@ func WatchEvents(ctx *Ctx, client *kubernetes.Clientset, eventReason string, eve
 
 			eventObject := event.Object.(*v1.Event)
 
-			ctx.Logger.Infof(EventChangedMessage, eventObject.Namespace, eventObject.Name)
+			ctx.Logger.Debugf(EventChangedMessage, eventObject.Namespace, eventObject.Name)
 
 			eventPool.Lock.Lock()
 
