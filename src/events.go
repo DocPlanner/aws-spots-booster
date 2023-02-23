@@ -8,7 +8,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	"log"
 	"math"
 	"strings"
 	"time"
@@ -26,7 +25,7 @@ const (
 // WatchNodes watches for nodes on k8s and keep a pool up-to-date with them
 // Done this way to reduce the calls done to Kube API
 // This function must be executed as a go routine
-func WatchNodes(client *kubernetes.Clientset, nodePool *NodePool) {
+func WatchNodes(ctx *Ctx, client *kubernetes.Clientset, nodePool *NodePool) {
 
 	// Ensure retry to create a watcher when failing
 	for {
@@ -38,14 +37,14 @@ func WatchNodes(client *kubernetes.Clientset, nodePool *NodePool) {
 
 		nodesWatcher, err := client.CoreV1().Nodes().Watch(context.TODO(), metav1.ListOptions{})
 		if err != nil {
-			log.Print(err)
+			ctx.Logger.Info(err)
 		}
 
 		for event := range nodesWatcher.ResultChan() {
 
 			nodeObject := event.Object.(*v1.Node)
 
-			log.Printf("node change detected on '%s', checking the node pool", nodeObject.Name) // TODO INFO
+			ctx.Logger.Infof("node change detected on '%s', checking the node pool", nodeObject.Name) // TODO INFO
 
 			nodePool.Lock.Lock()
 
@@ -80,7 +79,7 @@ func WatchNodes(client *kubernetes.Clientset, nodePool *NodePool) {
 
 // WatchEvents watches for some reasoned events on k8s and keep a pool up-to-date with them
 // This function must be executed as a go routine
-func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *EventPool) {
+func WatchEvents(ctx *Ctx, client *kubernetes.Clientset, eventReason string, eventPool *EventPool) {
 
 	// Ensure retry to create a watcher when failing
 	for {
@@ -95,7 +94,7 @@ func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *Ev
 		})
 
 		if err != nil {
-			log.Print(err)
+			ctx.Logger.Info(err)
 		}
 
 		for event := range eventWatcher.ResultChan() {
@@ -106,7 +105,7 @@ func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *Ev
 
 			switch event.Type {
 			case watch.Added:
-				log.Printf("event change detected on '%s/%s', checking the pool", eventObject.Namespace, eventObject.Name)
+				ctx.Logger.Infof("event change detected on '%s/%s', checking the pool", eventObject.Namespace, eventObject.Name)
 
 				// Filter repeated events coming from same nodes. New will replace the old
 				for storedEventIndex, storedEvent := range eventPool.Events.Items {
@@ -120,7 +119,7 @@ func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *Ev
 				eventPool.Events.Items = append(eventPool.Events.Items, *eventObject)
 
 			case watch.Deleted:
-				log.Printf("event deleted, checking the pool: %s/%s", eventObject.Namespace, eventObject.Name)
+				ctx.Logger.Infof("event deleted, checking the pool: %s/%s", eventObject.Namespace, eventObject.Name)
 
 				// Remove the event from the pool: last item to current position, then delete last
 				for storedEventIndex, storedEvent := range eventPool.Events.Items {
@@ -142,7 +141,7 @@ func WatchEvents(client *kubernetes.Clientset, eventReason string, eventPool *Ev
 
 // CleanKubernetesEvents delete old/nosense events from Kubernetes
 // This function must be executed as a go routine
-func CleanKubernetesEvents(client *kubernetes.Clientset, eventPool *EventPool, nodePool *NodePool, hours int) {
+func CleanKubernetesEvents(ctx *Ctx, client *kubernetes.Clientset, eventPool *EventPool, nodePool *NodePool, hours int) {
 
 	var nodeFound bool
 	for {
@@ -173,19 +172,19 @@ func CleanKubernetesEvents(client *kubernetes.Clientset, eventPool *EventPool, n
 			// Check the time window
 			parsedDate, err := time.Parse(time.RFC3339, rebalanceDate)
 			if err != nil {
-				log.Print("impossible to parse date on the message")
+				ctx.Logger.Info("impossible to parse date on the message")
 			}
 
 			difference := parsedDate.Sub(time.Now())
 
 			// 3. Actual cleaning according to the previous conditions
 			if math.Abs(difference.Hours()) > float64(hours) || !nodeFound {
-				log.Printf("An event is too old (%s), deleting: %s/%s",
+				ctx.Logger.Infof("An event is too old (%s), deleting: %s/%s",
 					math.Abs(difference.Hours()), event.Namespace, event.Name)
 
 				err = KubernetesDeleteEvent(client, event.Namespace, event.Name)
 				if err != nil && !errors.IsNotFound(err) {
-					log.Print("impossible to delete event from K8s")
+					ctx.Logger.Info("impossible to delete event from K8s")
 				}
 			}
 		}

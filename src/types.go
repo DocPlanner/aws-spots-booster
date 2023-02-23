@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"sync"
 	"time"
@@ -75,4 +77,11 @@ type ControllerFlags struct {
 	// Metrics
 	MetricsPort *string
 	MetricsHost *string
+}
+
+// Ctx represents the main context of the controller
+type Ctx struct {
+	Ctx    context.Context
+	Logger *zap.SugaredLogger
+	Flags  *ControllerFlags
 }

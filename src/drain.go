@@ -6,7 +6,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/drain"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -30,7 +29,7 @@ const (
 )
 
 // DrainNodesUnderRisk TODO
-func DrainNodesUnderRisk(client *kubernetes.Clientset, awsClient *session.Session, flags *ControllerFlags, eventPool *EventPool, nodePool *NodePool) {
+func DrainNodesUnderRisk(ctx *Ctx, client *kubernetes.Clientset, awsClient *session.Session, eventPool *EventPool, nodePool *NodePool) {
 
 	// Prepare kubectl to drain nodes
 	drainHelper := &drain.Helper{
@@ -41,7 +40,7 @@ func DrainNodesUnderRisk(client *kubernetes.Clientset, awsClient *session.Sessio
 
 		IgnoreAllDaemonSets: true,
 		DeleteEmptyDirData:  true,
-		Timeout:             *flags.DrainTimeout,
+		Timeout:             *ctx.Flags.DrainTimeout,
 
 		Out:    os.Stdout,
 		ErrOut: os.Stdout,
@@ -49,9 +48,9 @@ func DrainNodesUnderRisk(client *kubernetes.Clientset, awsClient *session.Sessio
 
 	for {
 		// Lock process on dry-run
-		if *flags.DryRun == true {
-			log.Print(DrainNotAllowedMessage)
-			time.Sleep(*flags.TimeBetweenDrains)
+		if *ctx.Flags.DryRun == true {
+			ctx.Logger.Info(DrainNotAllowedMessage)
+			time.Sleep(*ctx.Flags.TimeBetweenDrains)
 			continue
 		}
 
@@ -59,7 +58,7 @@ func DrainNodesUnderRisk(client *kubernetes.Clientset, awsClient *session.Sessio
 
 		// 1. Check whether the eventPool is already filled by the watcher
 		if len(eventPool.Events.Items) == 0 {
-			time.Sleep(*flags.TimeBetweenDrains)
+			time.Sleep(*ctx.Flags.TimeBetweenDrains)
 			continue
 		}
 
@@ -83,8 +82,8 @@ func DrainNodesUnderRisk(client *kubernetes.Clientset, awsClient *session.Sessio
 			var currentDrainingEvents []*v1.Event
 
 			// Set a maximum number of drains for this nodegroup
-			currentMaxNumberDrainingEvents = *flags.MaxConcurrentDrains
-			if nodegroupReadyCount < *flags.MaxConcurrentDrains {
+			currentMaxNumberDrainingEvents = *ctx.Flags.MaxConcurrentDrains
+			if nodegroupReadyCount < *ctx.Flags.MaxConcurrentDrains {
 				currentMaxNumberDrainingEvents = nodegroupReadyCount
 			}
 
@@ -105,28 +104,28 @@ func DrainNodesUnderRisk(client *kubernetes.Clientset, awsClient *session.Sessio
 					IgnoreRecentReadyNodeAnnotation: IgnoreRecentReadyNodeAnnotationValue,
 				})
 				if err != nil {
-					log.Printf(UpdateNodeAnnotationsErrorMessage, nodegroupNodes[currentEventIndex].Name, err)
+					ctx.Logger.Infof(UpdateNodeAnnotationsErrorMessage, nodegroupNodes[currentEventIndex].Name, err)
 				}
 
 				// Execute a drain for a node under risk
 				waitGroup.Add(1)
-				go DispatchDrainage(client, awsClient, drainHelper, nodePool, currentDrainingEvents[currentEventIndex], &waitGroup)
+				go DispatchDrainage(ctx, client, awsClient, drainHelper, nodePool, currentDrainingEvents[currentEventIndex], &waitGroup)
 			}
 		}
 
 		waitGroup.Wait()
-		time.Sleep(*flags.TimeBetweenDrains)
+		time.Sleep(*ctx.Flags.TimeBetweenDrains)
 	}
 }
 
 // DispatchDrainage drain a node according to data provided by an event
 // This function is expected to be executed as a goroutine
-func DispatchDrainage(client *kubernetes.Clientset, awsClient *session.Session, drainHelper *drain.Helper, nodePool *NodePool, event *v1.Event, waitGroup *sync.WaitGroup) {
-	log.Printf(WorkerLaunchedMessage, event.InvolvedObject.Name) // TODO INFO
+func DispatchDrainage(ctx *Ctx, client *kubernetes.Clientset, awsClient *session.Session, drainHelper *drain.Helper, nodePool *NodePool, event *v1.Event, waitGroup *sync.WaitGroup) {
+	ctx.Logger.Infof(WorkerLaunchedMessage, event.InvolvedObject.Name) // TODO INFO
 	err := drain.RunNodeDrain(drainHelper, event.InvolvedObject.Name)
 
 	if err != nil {
-		log.Printf(DrainingErrorMessage, event.InvolvedObject.Name, err)
+		ctx.Logger.Infof(DrainingErrorMessage, event.InvolvedObject.Name, err)
 	}
 
 	// Terminate the problematic instance
@@ -136,20 +135,20 @@ func DispatchDrainage(client *kubernetes.Clientset, awsClient *session.Session, 
 	for _, node := range nodePool.Nodes.Items {
 		if node.Name == event.InvolvedObject.Name {
 			providerIDSubstrings = strings.Split(node.Spec.ProviderID, "/")
-			log.Print(providerIDSubstrings[len(providerIDSubstrings)-1])
+			ctx.Logger.Info(providerIDSubstrings[len(providerIDSubstrings)-1])
 			instanceName = providerIDSubstrings[len(providerIDSubstrings)-1]
 		}
 	}
 
 	err = AwsTerminateInstance(awsClient, instanceName)
 	if err != nil && !errors.IsNotFound(err) {
-		log.Printf(InstanceNotFoundErrorMessage, instanceName, err)
+		ctx.Logger.Infof(InstanceNotFoundErrorMessage, instanceName, err)
 	}
 
 	// Delete the event from Kubernetes
 	err = KubernetesDeleteEvent(client, event.Namespace, event.Name)
 	if err != nil && !errors.IsNotFound(err) {
-		log.Printf(EventNotDeletedErrorMessage, err)
+		ctx.Logger.Infof(EventNotDeletedErrorMessage, err)
 	}
 
 	waitGroup.Done()

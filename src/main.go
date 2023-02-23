@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	_ "k8s.io/apimachinery/pkg/labels"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/homedir"
 	"log"
@@ -28,72 +30,72 @@ const (
 
 // SynchronizeBoosts execute all the processes needed to work. It is like main() but more related to the process
 // This function is expected to be run as a goroutine
-func SynchronizeBoosts(client *kubernetes.Clientset, flags *ControllerFlags) {
+func SynchronizeBoosts(ctx *Ctx, client *kubernetes.Clientset) {
 
 	// Update the nodes pool
 	nodePool := &NodePool{}
-	go WatchNodes(client, nodePool)
+	go WatchNodes(ctx, client, nodePool)
 
 	// Update the events pool
 	eventPool := &EventPool{}
-	go WatchEvents(client, RebalanceEvent, eventPool)
+	go WatchEvents(ctx, client, RebalanceEvent, eventPool)
 
 	// Keep Kubernetes clean
-	go CleanKubernetesEvents(client, eventPool, nodePool, 24)
+	go CleanKubernetesEvents(ctx, client, eventPool, nodePool, 24)
 
 	// Load Cluster Autoscaler status configmap on memory JIT
 	autoscalingGroupPool := &AutoscalingGroupPool{}
-	go WatchStatusConfigmap(client, flags, autoscalingGroupPool)
+	go WatchStatusConfigmap(ctx, client, autoscalingGroupPool)
 
 	//
 	awsClient, err := AwsCreateSession()
 	if err != nil {
-		log.Printf(GenerateAwsClientErrorMessage, err)
+		ctx.Logger.Infof(GenerateAwsClientErrorMessage, err)
 	}
-	go WatchAutoScalingGroupsTags(awsClient, flags, autoscalingGroupPool)
+	go WatchAutoScalingGroupsTags(ctx, awsClient, autoscalingGroupPool)
 
 	// Launch a drainer in the background
-	if !*flags.DisableDrain {
-		go DrainNodesUnderRisk(client, awsClient, flags, eventPool, nodePool)
+	if !*ctx.Flags.DisableDrain {
+		go DrainNodesUnderRisk(ctx, client, awsClient, eventPool, nodePool)
 	}
 
 	// Start working with the events
 	for {
 
-		log.Printf("events on the pool: %d", len(eventPool.Events.Items))
-		log.Printf("nodes on the pool: %d", len(nodePool.Nodes.Items))
+		ctx.Logger.Infof("events on the pool: %d", len(eventPool.Events.Items))
+		ctx.Logger.Infof("nodes on the pool: %d", len(nodePool.Nodes.Items))
 
 		// Get a map of node-group, each value is the count of its nodes
 		nodeGroupNodesCount := GetNodeCountByNodeGroup(nodePool)
-		log.Printf("nodes by nodegroup %v", nodeGroupNodesCount)
+		ctx.Logger.Infof("nodes by nodegroup %v", nodeGroupNodesCount)
 
 		// Get a map of node-group, each value is the count of its events
 		nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
-		log.Printf("events by nodegroup %v", nodeGroupEventsCount)
+		ctx.Logger.Infof("events by nodegroup %v", nodeGroupEventsCount)
 
 		// Get a map of node-group, each value is the count of its cordoned nodes
 		nodeGroupCordonedNodesCount := GetCordonedNodeCountByNodeGroup(nodePool)
-		log.Printf("cordoned nodes by nodegroup %v", nodeGroupCordonedNodesCount)
+		ctx.Logger.Infof("cordoned nodes by nodegroup %v", nodeGroupCordonedNodesCount)
 
 		nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, true)
-		log.Printf("RECENTLY READY nodes by nodegroup %v", nodeGroupRecentReadyNodesCount)
+		ctx.Logger.Infof("RECENTLY READY nodes by nodegroup %v", nodeGroupRecentReadyNodesCount)
 
 		// Calculate final capacity for the ASGs
 		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(autoscalingGroupPool, nodeGroupEventsCount)
 		if err != nil {
-			log.Fatal(err)
+			ctx.Logger.Fatal(err)
 		}
-		log.Printf("show calculations for autocaling groups: %v", asgsDesiredCapacities)
+		ctx.Logger.Infof("show calculations for autocaling groups: %v", asgsDesiredCapacities)
 
-		err = SetDesiredCapacityASGs(awsClient, flags, autoscalingGroupPool, asgsDesiredCapacities)
+		err = SetDesiredCapacityASGs(ctx, awsClient, autoscalingGroupPool, asgsDesiredCapacities)
 		if err != nil {
-			log.Fatal(err)
+			ctx.Logger.Fatal(err)
 		}
 
 		// Update Prometheus metrics from AutoscalingGroups type data
 		err = upgradePrometheusMetrics(eventPool, nodePool, autoscalingGroupPool)
 		if err != nil {
-			log.Print(MetricsUpdateErrorMessage)
+			ctx.Logger.Info(MetricsUpdateErrorMessage)
 		}
 
 		time.Sleep(SynchronizationScheduleSeconds * time.Second)
@@ -124,21 +126,45 @@ func main() {
 	flags.MetricsHost = flag.String("metrics-host", "0.0.0.0", "host where metrics web-server will run")
 	flag.Parse()
 
-	// Generate the Kubernetes client to modify the resources
-	log.Printf(GenerateRestClientMessage)
-	client, err := GetKubernetesClient(*flags.ConnectionMode, *flags.Kubeconfig)
+	//
+	mainCtx := context.Background()
+
+	// Initialize the logger
+	loggerConfig := zap.NewProductionConfig()
+	loggerConfig.EncoderConfig.TimeKey = "timestamp"
+	loggerConfig.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout(time.RFC3339)
+	loggerConfig.Level.SetLevel(zap.InfoLevel)
+
+	// Configure the logger
+	logger, err := loggerConfig.Build()
 	if err != nil {
-		log.Printf(GenerateRestClientErrorMessage, err)
+		log.Fatal(err)
+	}
+	sugar := logger.Sugar()
+
+	// As we are not using Kubebuilder yet, we need a main context
+	// to be propagated into the functions that needs to log in a sugared way
+	ctx := Ctx{
+		Ctx:    mainCtx,
+		Logger: sugar,
+		Flags:  flags,
+	}
+
+	// Generate the Kubernetes client to modify the resources
+	ctx.Logger.Info(GenerateRestClientMessage)
+	client, err := GetKubernetesClient(*ctx.Flags.ConnectionMode, *ctx.Flags.Kubeconfig)
+	if err != nil {
+		ctx.Logger.Infof(GenerateRestClientErrorMessage, err)
 	}
 
 	// Parse Cluster Autoscaler's status configmap in the background
-	go SynchronizeBoosts(client, flags)
+	go SynchronizeBoosts(&ctx, client)
 
 	// Start a webserver for exposing metrics endpoint
-	metricsHost := *flags.MetricsHost + ":" + *flags.MetricsPort
+	metricsHost := *ctx.Flags.MetricsHost + ":" + *ctx.Flags.MetricsPort
 	http.Handle("/metrics", promhttp.Handler())
 	err = http.ListenAndServe(metricsHost, nil)
 	if err != nil {
-		log.Printf(MetricsWebserverErrorMessage, err)
+		ctx.Logger.Infof(MetricsWebserverErrorMessage, err)
 	}
 }

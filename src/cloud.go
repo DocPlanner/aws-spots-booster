@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	_ "golang.org/x/exp/slices"
 	"k8s.io/utils/strings/slices"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +24,7 @@ const (
 )
 
 // WatchAutoScalingGroupsTags TODO
-func WatchAutoScalingGroupsTags(awsClient *session.Session, flags *ControllerFlags, autoscalingGroupPool *AutoscalingGroupPool) {
+func WatchAutoScalingGroupsTags(ctx *Ctx, awsClient *session.Session, autoscalingGroupPool *AutoscalingGroupPool) {
 
 	var autoscalingGroupNames []string
 
@@ -39,16 +38,16 @@ func WatchAutoScalingGroupsTags(awsClient *session.Session, flags *ControllerFla
 			}
 
 			if try == ASGWatcherTriesBeforeFailing {
-				log.Fatal("impossible to get ASGs tags from cloud. ASGs names are not loaded in memory")
+				ctx.Logger.Fatal("impossible to get ASGs tags from cloud. ASGs names are not loaded in memory")
 			}
-			log.Print("autoscaling groups are not parsed yet")
+			ctx.Logger.Info("autoscaling groups are not parsed yet")
 			time.Sleep(ASGWatcherSecondsBetweenTries * time.Second)
 		}
 
 		// Get ASGs tags from AWS
 		tagsOutput, err := AwsDescribeAutoScalingGroupsTags(awsClient, autoscalingGroupNames)
 		if err != nil {
-			log.Print("say something") // TODO Improve logging
+			ctx.Logger.Info("say something") // TODO Improve logging
 		}
 
 		// Group tags by ASG name
@@ -224,15 +223,15 @@ func CalculateDesiredCapacityASGs(autoscalingGroupPool *AutoscalingGroupPool, no
 
 // SetDesiredCapacityASGs change DesiredCapacity field for a batch of ASGs in the cloud provider
 // Arguments related to capacity are not pointers but explicit copies to avoid external modifications during changes
-func SetDesiredCapacityASGs(awsClient *session.Session, flags *ControllerFlags, autoscalingGroupPool *AutoscalingGroupPool, asgsDesiredCapacity map[string]int) (err error) {
+func SetDesiredCapacityASGs(ctx *Ctx, awsClient *session.Session, autoscalingGroupPool *AutoscalingGroupPool, asgsDesiredCapacity map[string]int) (err error) {
 
 	// Get ignored node-groups from flags
-	ignoredAsgs := strings.Split(*flags.IgnoredAutoscalingGroups, ",")
+	ignoredAsgs := strings.Split(*ctx.Flags.IgnoredAutoscalingGroups, ",")
 	ignoredAsgs = slices.Filter(nil, ignoredAsgs, func(s string) bool { return s != "" })
 
 	asgsMaxCapacity, err := GetAutoscalingGroupsMaxCapacity(autoscalingGroupPool)
 	if err != nil {
-		log.Printf("impossible to get max capacity for some asg: %v", err) // TODO ERROR
+		ctx.Logger.Infof("impossible to get max capacity for some asg: %v", err) // TODO ERROR
 		return
 	}
 
@@ -242,21 +241,21 @@ outterLoop:
 		// Skip ASG when must be ignored by flags configuration
 		for _, ignoredASG := range ignoredAsgs {
 			if asgName == ignoredASG {
-				log.Printf("skipping changes for ignored asg: %s", asgName) // TODO INFO
+				ctx.Logger.Infof("skipping changes for ignored asg: %s", asgName) // TODO INFO
 				continue outterLoop
 			}
 		}
 
-		asgDesiredCapacity = asgDesiredCapacity + *flags.ExtraNodesOverCalculations
-		log.Printf("setting desired capacity for '%s' to '%d'", asgName, asgDesiredCapacity) // TODO INFO
+		asgDesiredCapacity = asgDesiredCapacity + *ctx.Flags.ExtraNodesOverCalculations
+		ctx.Logger.Infof("setting desired capacity for '%s' to '%d'", asgName, asgDesiredCapacity) // TODO INFO
 
 		// Check whether desired capacity is into the max capacity
 		if asgDesiredCapacity > asgsMaxCapacity[asgName] {
 			asgDesiredCapacity = asgsMaxCapacity[asgName]
-			log.Printf("setting desired capacity for '%s' to the asg max '%d'", asgName, asgsMaxCapacity[asgName]) // TODO INFO
+			ctx.Logger.Infof("setting desired capacity for '%s' to the asg max '%d'", asgName, asgsMaxCapacity[asgName]) // TODO INFO
 		}
 
-		if *flags.DryRun {
+		if *ctx.Flags.DryRun {
 			continue
 		}
 
@@ -266,7 +265,7 @@ outterLoop:
 			asgName,
 			int64(asgDesiredCapacity))
 		if err != nil {
-			log.Printf("impossible to reflect changes on aws asg '%s': %v", asgName, err) // TODO ERROR
+			ctx.Logger.Infof("impossible to reflect changes on aws asg '%s': %v", asgName, err) // TODO ERROR
 		}
 	}
 

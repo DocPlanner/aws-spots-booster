@@ -52,7 +52,7 @@ func GetEventsByNodeGroup(eventPool *EventPool, nodePool *NodePool) (nodeGroupEv
 		// Look for the node related to current event to get the nodegroup label
 	innerLoop:
 		for _, node := range nodePool.Nodes.Items {
-			//log.Print(node)
+			//ctx.Logger.Info(node)
 			if node.Name != event.InvolvedObject.Name {
 				continue innerLoop
 			}

@@ -54,11 +54,12 @@ application. They are described in the following table:
 | `--ignored-autoscaling-groups`   | Comma-separated list of autoscaling-group names to ignore on ASGs boosting                 |              -              | `--ignored-autoscaling-groups "eks-one,eks-two"` |
 | `--extra-nodes-over-calculation` | Extra nodes to add to ASGs over calculated ones                                            |             `0`             | `--extra-nodes-over-calculation 3`               |
 | `--disable-drain`                | Disable drain-and-destroy process for nodes under risk (not recommended)                   |           `false`           | `--disable-drain true`                           |
-| `--time-between-drains`          | Duration between scheduling a drainages batch and the following (when new nodes are ready) |            `60s`            | `--time-between-drains "1m"`                     |
 | `--drain-timeout`                | Duration to consider a drain as done when not finished                                     |           `120s`            | `--drain-timeout 2m`                             |
 | `--max-concurrent-drains`        | Nodes to drain at once                                                                     |             `5`             | `--max-concurrent-drains 7`                      |
+| `--time-between-drains`          | Duration between scheduling a drainages batch and the following (when new nodes are ready) |            `60s`            | `--time-between-drains "1m"`                     |
 | `--metrics-port`                 | Port where metrics web-server will run                                                     |           `2112`            | `--metrics-port 8080`                            |
 | `--metrics-host`                 | Host where metrics web-server will run                                                     |          `0.0.0.0`          | `--metrics-host 0.1.0.2`                         |
+| `--zap-log-level`                | Log level                                                                                  |           `info`            | `--zap-log-level debug`                          |
 | `--help`                         | Show this help message                                                                     |              -              | -                                                |
 
 ## FAQ
