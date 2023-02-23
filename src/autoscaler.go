@@ -15,6 +15,10 @@ import (
 )
 
 const (
+	// Info messages
+	ConfigmapChangedMessage = "configmap changed: %s/%s"
+	ConfigmapDeletedMessage = "configmap deleted from the cluster"
+
 	// Error messages
 	ConfigmapRetrieveErrorMessage = "error obtaining cluster-autoscaler status configmap from the cluster"
 	ConfigMapParseErrorMessage    = "error parsing status configmap (hint: syntax has changed between cluster-autoscaler versions?)"
@@ -39,9 +43,10 @@ func WatchStatusConfigmap(ctx *Ctx, client *kubernetes.Clientset, autoscalingGro
 
 			configmapObject := event.Object.(*v1.ConfigMap)
 
+			ctx.Logger.Debugf(ConfigmapChangedMessage, configmapObject.Namespace, configmapObject.Name)
+
 			switch event.Type {
 			case watch.Added, watch.Modified:
-				ctx.Logger.Infof("configmap changed: %s/%s", configmapObject.Namespace, configmapObject.Name)
 				autoscalingGroupsNames := ParseAutoscalingGroupsNames(configmapObject.Data["status"])
 				autoscalingGroupsHealthArgs := ParseAutoscalingGroupsHealthArguments(configmapObject.Data["status"])
 
@@ -72,7 +77,7 @@ func WatchStatusConfigmap(ctx *Ctx, client *kubernetes.Clientset, autoscalingGro
 				}
 
 			case watch.Deleted:
-				ctx.Logger.Fatal("configmap deleted, stopping the program ")
+				ctx.Logger.Info(ConfigmapDeletedMessage)
 			}
 		}
 	}
