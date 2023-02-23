@@ -19,7 +19,14 @@ const (
 	SynchronizationScheduleSeconds = 2
 
 	// Info messages
-	GenerateRestClientMessage = "generating rest client to connect to kubernetes"
+	GenerateRestClientMessage            = "generating rest client to connect to kubernetes"
+	EventsOnPoolMessage                  = "events on the pool: %d"
+	NodesOnPoolMessage                   = "nodes on the pool: %d"
+	NodesByNodegroupMessage              = "nodes by nodegroup %v"
+	EventsByNodegroupMessage             = "events by nodegroup %v"
+	CordonedNodesByNodegroupMessage      = "cordoned nodes by nodegroup %v"
+	RecentlyReadyNodesByNodegroupMessage = "recently ready nodes by nodegroup %v"
+	ShowCalculationsMessage              = "show calculations for autocaling groups: %v"
 
 	// Error messages
 	GenerateAwsClientErrorMessage  = "error connecting to aws api: %s"
@@ -62,30 +69,30 @@ func SynchronizeBoosts(ctx *Ctx, client *kubernetes.Clientset) {
 	// Start working with the events
 	for {
 
-		ctx.Logger.Infof("events on the pool: %d", len(eventPool.Events.Items))
-		ctx.Logger.Infof("nodes on the pool: %d", len(nodePool.Nodes.Items))
+		ctx.Logger.Infof(EventsOnPoolMessage, len(eventPool.Events.Items))
+		ctx.Logger.Infof(NodesOnPoolMessage, len(nodePool.Nodes.Items))
 
 		// Get a map of node-group, each value is the count of its nodes
 		nodeGroupNodesCount := GetNodeCountByNodeGroup(nodePool)
-		ctx.Logger.Infof("nodes by nodegroup %v", nodeGroupNodesCount)
+		ctx.Logger.Infof(NodesByNodegroupMessage, nodeGroupNodesCount)
 
 		// Get a map of node-group, each value is the count of its events
 		nodeGroupEventsCount := GetEventCountByNodeGroup(eventPool, nodePool)
-		ctx.Logger.Infof("events by nodegroup %v", nodeGroupEventsCount)
+		ctx.Logger.Infof(EventsByNodegroupMessage, nodeGroupEventsCount)
 
 		// Get a map of node-group, each value is the count of its cordoned nodes
 		nodeGroupCordonedNodesCount := GetCordonedNodeCountByNodeGroup(nodePool)
-		ctx.Logger.Infof("cordoned nodes by nodegroup %v", nodeGroupCordonedNodesCount)
+		ctx.Logger.Infof(CordonedNodesByNodegroupMessage, nodeGroupCordonedNodesCount)
 
 		nodeGroupRecentReadyNodesCount := GetRecentlyReadyNodeCountByNodeGroup(nodePool, DurationToConsiderNewNodes, true)
-		ctx.Logger.Infof("RECENTLY READY nodes by nodegroup %v", nodeGroupRecentReadyNodesCount)
+		ctx.Logger.Infof(RecentlyReadyNodesByNodegroupMessage, nodeGroupRecentReadyNodesCount)
 
 		// Calculate final capacity for the ASGs
 		asgsDesiredCapacities, err := CalculateDesiredCapacityASGs(autoscalingGroupPool, nodeGroupEventsCount)
 		if err != nil {
 			ctx.Logger.Fatal(err)
 		}
-		ctx.Logger.Infof("show calculations for autocaling groups: %v", asgsDesiredCapacities)
+		ctx.Logger.Infof(ShowCalculationsMessage, asgsDesiredCapacities)
 
 		err = SetDesiredCapacityASGs(ctx, awsClient, autoscalingGroupPool, asgsDesiredCapacities)
 		if err != nil {
