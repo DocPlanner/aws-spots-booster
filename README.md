@@ -1,7 +1,23 @@
 # AWS Spots Booster
 
+<img src="https://github.com/achetronic/aws-spots-booster/raw/main/docs/img/logo.png" width="100">
+
 A controller for Kubernetes that increase AWS ASGs capacity on `RebalanceRecommendation` events, 
 and drain cordoned nodes in a controlled way
+
+<p>
+  <a href="https://github.com/kubernetes/kubernetes/releases">
+    <img src="https://img.shields.io/badge/Kubernetes-%3E%3D%201.18-brightgreen" alt="kubernetes">
+  </a>
+  <a href="https://golang.org/doc/go1.19">
+    <img src="https://img.shields.io/github/go-mod/go-version/aws/aws-node-termination-handler?color=blueviolet" alt="go-version">
+  </a>
+  <a href="https://opensource.org/licenses/Apache-2.0">
+    <img src="https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg" alt="license">
+  </a>
+</p>
+
+----
 
 ## Motivation
 
@@ -20,8 +36,8 @@ creating new nodes when pods become `Pending` after draining
 There is a gap between the time some capacity is removed and new one is joined to Kubernetes, causing outages and making
 spots unusable on real production scenarios with heavy loads.
 
-This controller is the missing piece in the middle, just to boost your ASGs containing Spot instances on 
-`RebalanceRecommendarion` and drain cordoned nodes on a controlled way, keeping your capacity over the time.
+This controller is the missing piece in the middle, just to **boost your ASGs containing Spot instances on 
+`RebalanceRecommendarion` and drain cordoned nodes on a controlled way**, keeping your capacity over the time.
 
 ## Requirements on your cluster
 
@@ -86,14 +102,13 @@ Each release of this container is done following several steps carefully in orde
 2. Define the package information
 
     ```console
-    export PLATFORM="linux/amd64"
     export VERSION="0.0.1"
     ```
 
 3. Generate and push the Docker image (published on Docker Hub).
 
     ```console
-    make docker-build docker-push
+    make docker-buildx
     ```
 
 ## How to collaborate
@@ -106,3 +121,19 @@ For doing it, open an issue to discuss the need of the changes, then:
 - Fork the repository
 - Make your changes to the code
 - Open a PR and wait for review
+
+## License
+
+Copyright 2022.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
