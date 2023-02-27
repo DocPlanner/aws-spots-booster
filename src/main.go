@@ -15,6 +15,10 @@ import (
 )
 
 const (
+	// Default values
+	// DurationToConsiderNewNodes represents the time window to consider nodes joined to Kubernetes as new nodes
+	DurationToConsiderNewNodes = -10 * time.Minute
+
 	// SynchronizationScheduleSeconds The time in seconds between synchronizations
 	SynchronizationScheduleSeconds = 2
 
@@ -129,6 +133,7 @@ func main() {
 	flags.DrainTimeout = flag.Duration("drain-timeout", 120*time.Second, "duration to consider a drain as done when not finished")
 	flags.MaxConcurrentDrains = flag.Int("max-concurrent-drains", 5, "maximum number of nodes to drain at once")
 	flags.IgnorePodsGracePeriod = flag.Bool("ignore-pods-grace-period", false, "ignore waiting for pod's grace period on termination when draininge")
+	flags.MaxTimeConsiderNewNodes = flag.Duration("max-time-consider-new-node", DurationToConsiderNewNodes, "max time to consider a node as new after joined to the cluster")
 
 	flags.MetricsPort = flag.String("metrics-port", "2112", "port where metrics web-server will run")
 	flags.MetricsHost = flag.String("metrics-host", "0.0.0.0", "host where metrics web-server will run")

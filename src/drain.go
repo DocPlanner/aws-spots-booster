@@ -13,9 +13,6 @@ import (
 )
 
 const (
-	// DurationToConsiderNewNodes represents the time window to consider nodes joined to Kubernetes as new nodes
-	// Default: since 10 minute ago
-	DurationToConsiderNewNodes = -10 * time.Minute
 
 	// Info messages
 	WorkerLaunchedMessage  = "worker launched in background: draining the node: %s"
@@ -68,7 +65,7 @@ func DrainNodesUnderRisk(ctx *Ctx, client *kubernetes.Clientset, awsClient *sess
 		}
 
 		// Get recently added nodes, ignoring those with 'IgnoreRecentReadyNodeAnnotation' annotation
-		recentlyAddedNodes := GetRecentlyReadyNodesByNodeGroup(nodePool, DurationToConsiderNewNodes, true)
+		recentlyAddedNodes := GetRecentlyReadyNodesByNodeGroup(nodePool, *ctx.Flags.MaxTimeConsiderNewNodes, true)
 		groupedEvents := GetEventsByNodeGroup(eventPool, nodePool)
 
 		// 2. Loop over each nodegroup launching some drainage in parallel
