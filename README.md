@@ -104,6 +104,13 @@ env:
     value: YOUR_AWS_REGION
 ```
 
+> Shared config is enabled by default, this means that it's possible to provide a whole config file using 
+> **AWS_SDK_LOAD_CONFIG** environment variable with several profiles inside. One of them can be selected just setting 
+> its name on **AWS_PROFILE**. 
+> Even when this is possible, **it's not recommended** to have the credentials of several profiles
+> inside all your environments, so our recommendation is to use this feature only when testing the controller from local
+> without deploying it into Kubernetes.
+
 ## How to deploy
 
 We are working on a public Helm Chart which will be hosted on this repository. Until then, the 

@@ -79,10 +79,8 @@ func AwsCreateSession() (*session.Session, error) {
 
 	awsSession, err := session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
-			Region:                        aws.String("eu-central-1"),
 			CredentialsChainVerboseErrors: aws.Bool(true),
 		},
-		Profile:           "account-p2",
 		SharedConfigState: session.SharedConfigEnable,
 	})
 
