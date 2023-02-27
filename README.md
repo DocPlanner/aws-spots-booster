@@ -51,9 +51,64 @@ This controller is the missing piece in the middle, just to **boost your ASGs co
   For doing it, you need to set `enableRebalanceMonitoring` to `true` on its Helm chart, and be sure 
   that `enableRebalanceDraining` is **disabled** (don't worry, this is the default)
 
+## Permissions
+
+AWS Spots Booster require some permissions on the provider side to be able to terminate instances on drain process or
+read tags from ASGs. Several ways to do this can be used, but we recommend to use OIDC on EKS clusters
+
+### Using OIDC Federated Authentication
+
+OIDC federated authentication allows your service to assume an IAM role and interact with AWS services without having 
+to store credentials as environment variables. For an example of how to use AWS IAM OIDC with the AWS Spots Booster, 
+please see [here](docs/permissions_with_aws_iam_oidc.md).
+
+### Using AWS Credentials
+
+**NOTE** The following is not recommended for Kubernetes clusters running on
+AWS. If you are using Amazon EKS, consider using [IAM roles for Service
+Accounts](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
+instead.
+
+For on-premise clusters, you may create an IAM user subject to the above policy
+and provide the IAM credentials as environment variables in the AWS Spots Booster deployment manifest.
+AWS Spots Booster will use these credentials to authenticate and authorize itself.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-secret
+type: Opaque
+data:
+  aws_access_key_id: BASE64_OF_YOUR_AWS_ACCESS_KEY_ID
+  aws_secret_access_key: BASE64_OF_YOUR_AWS_SECRET_ACCESS_KEY
+```
+
+Please refer to the [relevant Kubernetes
+documentation](https://kubernetes.io/docs/concepts/configuration/secret/#creating-a-secret-manually)
+for creating a secret manually.
+
+```yaml
+env:
+  - name: AWS_ACCESS_KEY_ID
+    valueFrom:
+      secretKeyRef:
+        name: aws-secret
+        key: aws_access_key_id
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: aws-secret
+        key: aws_secret_access_key
+  - name: AWS_REGION
+    value: YOUR_AWS_REGION
+```
+
 ## How to deploy
 
-TODO
+We are working on a public Helm Chart which will be hosted on this repository. Until then, the 
+[simplest deployment](docs/examples/simple-deployment.yaml)
+example from the documentation can be used instead.
 
 ## Flags
 

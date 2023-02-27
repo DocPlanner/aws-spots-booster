@@ -77,7 +77,7 @@ __NOTE:__ Please see [the README](README.md#IAM-Policy) for more information on 
 - Download a deployment example file provided by the AWS Spots Booster project on GitHub, run the following command:
 
 ```sh
-$ wget https://raw.githubusercontent.com/docplanner/aws-spots-booster/main/docs/examples/aws-spots-booster-deployment.yaml
+$ wget https://raw.githubusercontent.com/docplanner/aws-spots-booster/main/docs/examples/simple-deployment.yaml
 ```
 
 - Open the downloaded YAML file in an editor.
@@ -119,9 +119,9 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::xxxxx:role/Amazon_CA_role   # Add the IAM role created in the above C section.
+    eks.amazonaws.com/role-arn: arn:aws:iam::xxxxx:role/aws-spots-booster-role   # Add the IAM role created in the above C section.
   name: aws-spots-booster
-  namespace: kube-system
+  namespace: aws-spots-booster
 ```
 
 - Following this setup, you can test if the aws-spots-booster kicked in and if the role was attached using the below commands:
