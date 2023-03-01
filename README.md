@@ -1,6 +1,6 @@
 # AWS Spots Booster
 
-<img src="https://github.com/achetronic/aws-spots-booster/raw/main/docs/img/logo.png" width="100">
+<img src="https://github.com/docplanner/aws-spots-booster/raw/main/docs/img/logo.png" width="100">
 
 A controller for Kubernetes that increase AWS ASGs capacity on `RebalanceRecommendation` events, 
 and drain cordoned nodes in a controlled way
@@ -50,6 +50,22 @@ This controller is the missing piece in the middle, just to **boost your ASGs co
 
   For doing it, you need to set `enableRebalanceMonitoring` to `true` on its Helm chart, and be sure 
   that `enableRebalanceDraining` is **disabled** (don't worry, this is the default)
+
+## Architecture
+
+This toy is composed by two main processes:
+
+1. A process to do the calculations and set the numbers into the cloud provider's ASGs
+2. A process to drain batches of nodes in a controlled way
+
+> There are a lot of goroutines running in the background just to have the pools (EventPool, ASGPool and NodePool) always
+> up-to-date and use them as a single point of truth. For better understanding, please, dig deeper into the source code.
+
+Main processes using those pools are executed asynchronously and their behaviour is described in the following images:
+
+<img src="https://github.com/docplanner/aws-spots-booster/raw/main/docs/img/calc-process.png" width="100%">
+
+<img src="https://github.com/docplanner/aws-spots-booster/raw/main/docs/img/drain-process.png" width="100%">
 
 ## Permissions
 
