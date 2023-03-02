@@ -19,6 +19,11 @@ and drain cordoned nodes in a controlled way
 
 ----
 
+> Use this controller **ONLY** if your cluster has Multi-AZ enabled.
+> If not, when a new instance is created on a RebalanceRecommendation event, 
+> AWS will provision it from datacenter's unbalanced pool, so after some seconds, will mark it again for termination.
+> This ends with an endless loop of scaling up nodes until ASG limit is reached and datacenter is rebalanced.
+
 ## Motivation
 
 Spot instances are good for saving costs but reliability is pretty important on production environments.
